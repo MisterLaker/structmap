@@ -11,15 +11,15 @@ import (
 
 func ExampleMarshal() {
 	type Address struct {
-		City string `map:"city"`
-		Zip  string `map:"zip,private"`
+		City string `structmap:"city"`
+		Zip  string `structmap:"zip,private"`
 	}
 
 	type User struct {
-		ID        string    `map:"id"`
-		Email     string    `map:"email,private"`
-		Address   Address   `map:"address"`
-		CreatedAt time.Time `map:"created_at,omitzero"`
+		ID        string    `structmap:"id"`
+		Email     string    `structmap:"email,private"`
+		Address   Address   `structmap:"address"`
+		CreatedAt time.Time `structmap:"created_at,omitzero"`
 	}
 
 	user := User{ID: "42", Email: "a@example.com", Address: Address{City: "Kyiv", Zip: "01001"}}
@@ -39,9 +39,9 @@ func ExampleUnmarshal() {
 	_ = json.Unmarshal([]byte(`{"id": "42", "age": 30, "created_at": "2026-10-29T12:00:00Z"}`), &m)
 
 	var user struct {
-		ID        string    `map:"id"`
-		Age       int       `map:"age"`
-		CreatedAt time.Time `map:"created_at"`
+		ID        string    `structmap:"id"`
+		Age       int       `structmap:"age"`
+		CreatedAt time.Time `structmap:"created_at"`
 	}
 
 	err := structmap.Unmarshal("", m, &user)
@@ -71,15 +71,15 @@ func ExampleCodec() {
 
 func ExampleDiff() {
 	type Address struct {
-		City string `map:"city"`
-		Zip  string `map:"zip"`
+		City string `structmap:"city"`
+		Zip  string `structmap:"zip"`
 	}
 
 	type User struct {
-		ID      string   `map:"id"`
-		Name    string   `map:"name,omitempty"`
-		Tags    []string `map:"tags"`
-		Address Address  `map:"address"`
+		ID      string   `structmap:"id"`
+		Name    string   `structmap:"name,omitempty"`
+		Tags    []string `structmap:"tags"`
+		Address Address  `structmap:"address"`
 	}
 
 	before := User{ID: "42", Name: "Ann", Tags: []string{"a"}, Address: Address{City: "Kyiv", Zip: "01001"}}
@@ -120,7 +120,7 @@ func (m *Money) UnmarshalMap(_ structmap.Scope, v any) error {
 
 func ExampleMarshaler() {
 	type Order struct {
-		Total Money `map:"total"`
+		Total Money `structmap:"total"`
 	}
 
 	m, _ := structmap.Marshal("", Order{Total: 1250})
@@ -136,7 +136,7 @@ func ExampleMarshaler() {
 
 func ExampleFieldError() {
 	type Item struct {
-		Qty uint8 `map:"qty"`
+		Qty uint8 `structmap:"qty"`
 	}
 
 	var item Item

@@ -15,15 +15,15 @@ Requires Go 1.27 or newer.
 
 ```go
 type Address struct {
-	City string `map:"city"`
-	Zip  string `map:"zip,private"`
+	City string `structmap:"city"`
+	Zip  string `structmap:"zip,private"`
 }
 
 type User struct {
-	ID        string    `map:"id"`
-	Email     string    `map:"email,private"`
-	Address   Address   `map:"address"`
-	CreatedAt time.Time `map:"created_at,omitzero"`
+	ID        string    `structmap:"id"`
+	Email     string    `structmap:"email,private"`
+	Address   Address   `structmap:"address"`
+	CreatedAt time.Time `structmap:"created_at,omitzero"`
 }
 
 user := User{ID: "42", Email: "a@example.com", Address: Address{City: "Kyiv", Zip: "01001"}}
@@ -38,7 +38,7 @@ var decoded User
 err = structmap.Unmarshal("", full, &decoded)
 ```
 
-The package-level functions use the `map` tag (`structmap.DefaultTag`). For another tag, use a `Codec`:
+The package-level functions use the `structmap` tag (`structmap.DefaultTag`). For another tag, use a `Codec`:
 
 ```go
 var db = structmap.Codec{Tag: "db"}
@@ -70,14 +70,14 @@ err = db.Unmarshal("search", m, &doc)
 
 ```go
 type Base struct {
-	ID   string `map:"id"`
-	Kind string `map:"kind"`
+	ID   string `structmap:"id"`
+	Kind string `structmap:"kind"`
 }
 
 type Doc struct {
-	Kind  string `map:"kind"`
-	Base  Base   `map:",squash"`           // {"id", "kind"} merged, Doc.Kind wins
-	Extra Base   `map:",squash,overwrite"` // its keys replace the parent's
+	Kind  string `structmap:"kind"`
+	Base  Base   `structmap:",squash"`           // {"id", "kind"} merged, Doc.Kind wins
+	Extra Base   `structmap:",squash,overwrite"` // its keys replace the parent's
 }
 ```
 
@@ -112,15 +112,15 @@ Unmarshal accepts its own Marshal output as well as `encoding/json` output (`flo
 
 ```go
 type Address struct {
-	City string `map:"city"`
-	Zip  string `map:"zip"`
+	City string `structmap:"city"`
+	Zip  string `structmap:"zip"`
 }
 
 type User struct {
-	ID      string   `map:"id"`
-	Name    string   `map:"name,omitempty"`
-	Tags    []string `map:"tags"`
-	Address Address  `map:"address"`
+	ID      string   `structmap:"id"`
+	Name    string   `structmap:"name,omitempty"`
+	Tags    []string `structmap:"tags"`
+	Address Address  `structmap:"address"`
 }
 
 before := User{ID: "42", Name: "Ann", Tags: []string{"a"}, Address: Address{City: "Kyiv", Zip: "01001"}}

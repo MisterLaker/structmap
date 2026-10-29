@@ -30,7 +30,7 @@ type Codec struct {
 }
 
 // DefaultTag is the struct tag key of Marshal, Unmarshal and Diff.
-const DefaultTag = "map"
+const DefaultTag = "structmap"
 
 var defaultCodec = Codec{Tag: DefaultTag}
 

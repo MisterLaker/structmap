@@ -8,31 +8,31 @@ import (
 )
 
 type benchMeta struct {
-	Author  string `map:"author"`
-	Version int    `map:"version"`
+	Author  string `structmap:"author"`
+	Version int    `structmap:"version"`
 }
 
 type benchItem struct {
-	SKU   string   `map:"sku"`
-	Qty   int      `map:"qty,omitempty"`
-	Price float64  `map:"price"`
-	Tags  []string `map:"tags"`
+	SKU   string   `structmap:"sku"`
+	Qty   int      `structmap:"qty,omitempty"`
+	Price float64  `structmap:"price"`
+	Tags  []string `structmap:"tags"`
 }
 
 type benchFlat struct {
-	ID        string    `map:"id"`
-	Title     string    `map:"title,public"`
-	Body      string    `map:"body,full"`
-	Views     int64     `map:"views,omitempty"`
-	Active    bool      `map:"active"`
-	CreatedAt time.Time `map:"created_at,omitzero"`
+	ID        string    `structmap:"id"`
+	Title     string    `structmap:"title,public"`
+	Body      string    `structmap:"body,full"`
+	Views     int64     `structmap:"views,omitempty"`
+	Active    bool      `structmap:"active"`
+	CreatedAt time.Time `structmap:"created_at,omitzero"`
 }
 
 type benchNested struct {
-	Flat   benchFlat         `map:",squash"`
-	Meta   *benchMeta        `map:"meta"`
-	Items  []benchItem       `map:"items"`
-	Labels map[string]string `map:"labels"`
+	Flat   benchFlat         `structmap:",squash"`
+	Meta   *benchMeta        `structmap:"meta"`
+	Items  []benchItem       `structmap:"items"`
+	Labels map[string]string `structmap:"labels"`
 }
 
 func newBenchNested() benchNested {

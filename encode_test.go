@@ -427,8 +427,8 @@ func TestDefaultCodec(t *testing.T) {
 	t.Parallel()
 
 	type item struct {
-		SKU string `map:"sku" tag:"id"`
-		Qty int    `map:"qty,omitempty" tag:"qty"`
+		SKU string `structmap:"sku" tag:"id"`
+		Qty int    `structmap:"qty,omitempty" tag:"qty"`
 	}
 
 	got, err := structmap.Marshal("", item{SKU: "a1"})

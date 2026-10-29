@@ -5,7 +5,7 @@
 //
 // # Tags
 //
-// Marshal, Unmarshal and Diff use the tag key "map" (DefaultTag), a Codec uses its own. Its value is
+// Marshal, Unmarshal and Diff use the tag key "structmap" (DefaultTag), a Codec uses its own. Its value is
 //
 //	`<tag>:"name,item,..."`
 //
