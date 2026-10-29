@@ -32,6 +32,11 @@ type field struct {
 	ptrZeroer bool // only a pointer to the field type has IsZero
 }
 
+// omitted reports whether omitempty or omitzero skip the value v of the field.
+func (f *field) omitted(v reflect.Value) bool {
+	return f.omitEmpty && isEmptyValue(v) || f.omitZero && isZeroValue(v, f)
+}
+
 func (f *field) inSchema(schema string) bool {
 	if schema == "" || f.schemas == nil {
 		return true
@@ -45,12 +50,14 @@ func (f *field) inSchema(schema string) bool {
 // typeInfo is what conversions need to know about a type, computed once per tag and type.
 type typeInfo struct {
 	fields []field // tagged fields of a struct type
+	simple bool    // every field has its own key: no squash and no duplicate names, for Diff
 
 	marshaler       bool // T implements Marshaler
 	ptrMarshaler    bool // only *T implements Marshaler
 	unmarshaler     bool // *T implements Unmarshaler
 	textUnmarshaler bool // *T implements encoding.TextUnmarshaler
 	needsEncoding   bool // Marshal converts values of T, see needsEncoding
+	equal           int  // index of the Equal(T) bool method of T, -1 if none, for Diff
 }
 
 // tagCache holds the type infos of one tag, it is resolved once per call
@@ -83,7 +90,7 @@ func (c *tagCache) info(t reflect.Type) *typeInfo {
 }
 
 func (c *tagCache) newInfo(t reflect.Type) *typeInfo {
-	info := &typeInfo{marshaler: t.Implements(marshalerType)}
+	info := &typeInfo{marshaler: t.Implements(marshalerType), equal: equalMethod(t)}
 
 	if t.Kind() != reflect.Pointer {
 		pt := reflect.PointerTo(t)
@@ -94,6 +101,7 @@ func (c *tagCache) newInfo(t reflect.Type) *typeInfo {
 
 	if t.Kind() == reflect.Struct {
 		info.fields = parseFields(t, c.tag)
+		info.simple = simpleFields(info.fields)
 		// Decided here, needsEncoding would look this struct up again.
 		info.needsEncoding = info.marshaler || info.ptrMarshaler || len(info.fields) > 0
 	} else {
@@ -101,6 +109,37 @@ func (c *tagCache) newInfo(t reflect.Type) *typeInfo {
 	}
 
 	return info
+}
+
+// simpleFields reports whether every field has its own key, so Diff compares them in place.
+func simpleFields(fields []field) bool {
+	for i := range fields {
+		if fields[i].squash {
+			return false
+		}
+
+		for j := range i {
+			if fields[j].name == fields[i].name {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// equalMethod returns the index of the Equal(T) bool method of t, such as time.Time's, or -1.
+func equalMethod(t reflect.Type) int {
+	if t.Kind() == reflect.Interface {
+		return -1
+	}
+
+	m, ok := t.MethodByName("Equal")
+	if !ok || m.Type.NumIn() != 2 || m.Type.In(1) != t || m.Type.NumOut() != 1 || m.Type.Out(0).Kind() != reflect.Bool {
+		return -1
+	}
+
+	return m.Index
 }
 
 // needsEncoding reports whether values of t contain Marshalers, structs with tagged fields

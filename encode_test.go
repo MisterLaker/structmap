@@ -305,7 +305,7 @@ func TestMarshalMarshaler(t *testing.T) {
 	t.Run("top level non-map", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := structmap.Marshal("tag", "", testMoney(1))
+		_, err := codec.Marshal(testMoney(1), "")
 
 		require.ErrorIs(t, err, structmap.ErrType)
 		assert.EqualError(t, err,
@@ -323,9 +323,9 @@ func TestMarshalErrors(t *testing.T) {
 			Items map[string][]testFailing `tag:"items"`
 		}
 
-		_, err := structmap.Marshal("tag", "", failing{
+		_, err := codec.Marshal(failing{
 			Items: map[string][]testFailing{"k": {{}, {Bad: true}}},
-		})
+		}, "")
 
 		var fe *structmap.FieldError
 		require.ErrorAs(t, err, &fe)
@@ -339,7 +339,7 @@ func TestMarshalErrors(t *testing.T) {
 		node := &testNode{Name: "a"}
 		node.Next = &testNode{Name: "b", Next: node}
 
-		_, err := structmap.Marshal("tag", "", node)
+		_, err := codec.Marshal(node, "")
 
 		require.ErrorIs(t, err, structmap.ErrCycle)
 	})
@@ -352,7 +352,7 @@ func TestMarshalErrors(t *testing.T) {
 			head = &testNode{Name: "n", Next: head}
 		}
 
-		_, err := structmap.Marshal("tag", "", head)
+		_, err := codec.Marshal(head, "")
 
 		require.NoError(t, err)
 	})
@@ -364,13 +364,13 @@ func TestMarshalPanics(t *testing.T) {
 	t.Run("non-struct input", func(t *testing.T) {
 		t.Parallel()
 
-		assert.Panics(t, func() { _, _ = structmap.Marshal("tag", "", 42) })
+		assert.Panics(t, func() { _, _ = codec.Marshal(42, "") })
 	})
 
 	t.Run("empty tag", func(t *testing.T) {
 		t.Parallel()
 
-		assert.PanicsWithValue(t, "structmap: empty tag", func() { _, _ = structmap.Marshal("", "", testData{}) })
+		assert.PanicsWithValue(t, "structmap: empty tag", func() { _, _ = structmap.Codec{}.Marshal(testData{}, "") })
 	})
 
 	t.Run("option typo", func(t *testing.T) {
@@ -382,7 +382,7 @@ func TestMarshalPanics(t *testing.T) {
 
 		assert.PanicsWithValue(t,
 			`structmap: unknown option "omitezero" in structmap_test.typo.CreatedAt tag "tag"`,
-			func() { _, _ = structmap.Marshal("tag", "", typo{}) },
+			func() { _, _ = codec.Marshal(typo{}, "") },
 		)
 	})
 
@@ -393,7 +393,7 @@ func TestMarshalPanics(t *testing.T) {
 			Sub testSub1 `tag:",sqash"`
 		}
 
-		assert.Panics(t, func() { _, _ = structmap.Marshal("tag", "", typo{}) })
+		assert.Panics(t, func() { _, _ = codec.Marshal(typo{}, "") })
 	})
 
 	t.Run("squash on non-struct", func(t *testing.T) {
@@ -405,7 +405,7 @@ func TestMarshalPanics(t *testing.T) {
 
 		assert.PanicsWithValue(t,
 			"structmap: squash on non-struct field structmap_test.badSquash.Name",
-			func() { _, _ = structmap.Marshal("tag", "", badSquash{}) },
+			func() { _, _ = codec.Marshal(badSquash{}, "") },
 		)
 	})
 
@@ -418,26 +418,28 @@ func TestMarshalPanics(t *testing.T) {
 
 		assert.PanicsWithValue(t,
 			"structmap: overwrite without squash on structmap_test.bad.Name",
-			func() { _, _ = structmap.Marshal("tag", "", bad{}) },
+			func() { _, _ = codec.Marshal(bad{}, "") },
 		)
 	})
 }
 
-func TestCodec(t *testing.T) {
+func TestDefaultCodec(t *testing.T) {
 	t.Parallel()
 
-	codec := structmap.Codec{Tag: "tag"}
-	input := testData{ID: "1", V1: "a", Sub1: &testSub1{Type: "x"}}
+	type item struct {
+		SKU string `structmap:"sku" tag:"id"`
+		Qty int    `structmap:"qty,omitempty" tag:"qty"`
+	}
 
-	got, err := codec.Marshal("schema1", input)
+	got, err := structmap.Marshal(item{SKU: "a1"}, "")
 	require.NoError(t, err)
-	assert.Equal(t, marshal(t, "schema1", input), got)
+	assert.Equal(t, map[string]any{"sku": "a1"}, got)
 
-	var decoded testData
-	require.NoError(t, codec.Unmarshal("schema1", got, &decoded))
-	assert.Equal(t, input, decoded)
+	var decoded item
+	require.NoError(t, structmap.Unmarshal(map[string]any{"sku": "b2", "id": "x", "qty": 5}, &decoded, ""))
+	assert.Equal(t, item{SKU: "b2", Qty: 5}, decoded)
 
-	assert.PanicsWithValue(t, "structmap: empty tag", func() { _ = structmap.Codec{}.Unmarshal("", nil, &decoded) })
+	assert.PanicsWithValue(t, "structmap: empty tag", func() { _ = structmap.Codec{}.Unmarshal(nil, &decoded, "") })
 }
 
 // testList is a recursive non-struct type, it must not loop while its type info is computed.

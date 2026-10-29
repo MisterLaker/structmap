@@ -116,7 +116,7 @@ func (e *encodeState) structMap(v reflect.Value, info *typeInfo) (map[string]any
 			continue
 		}
 
-		if f.omitEmpty && isEmptyValue(fv) || f.omitZero && isZeroValue(fv, f) {
+		if f.omitted(fv) {
 			continue
 		}
 

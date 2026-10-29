@@ -11,21 +11,21 @@ import (
 
 func ExampleMarshal() {
 	type Address struct {
-		City string `map:"city"`
-		Zip  string `map:"zip,private"`
+		City string `structmap:"city"`
+		Zip  string `structmap:"zip,private"`
 	}
 
 	type User struct {
-		ID        string    `map:"id"`
-		Email     string    `map:"email,private"`
-		Address   Address   `map:"address"`
-		CreatedAt time.Time `map:"created_at,omitzero"`
+		ID        string    `structmap:"id"`
+		Email     string    `structmap:"email,private"`
+		Address   Address   `structmap:"address"`
+		CreatedAt time.Time `structmap:"created_at,omitzero"`
 	}
 
 	user := User{ID: "42", Email: "a@example.com", Address: Address{City: "Kyiv", Zip: "01001"}}
 
-	public, _ := structmap.Marshal("map", "public", user)
-	full, _ := structmap.Marshal("map", "", user)
+	public, _ := structmap.Marshal(user, "public")
+	full, _ := structmap.Marshal(user, "")
 
 	fmt.Println(public)
 	fmt.Println(full)
@@ -39,12 +39,12 @@ func ExampleUnmarshal() {
 	_ = json.Unmarshal([]byte(`{"id": "42", "age": 30, "created_at": "2026-10-29T12:00:00Z"}`), &m)
 
 	var user struct {
-		ID        string    `map:"id"`
-		Age       int       `map:"age"`
-		CreatedAt time.Time `map:"created_at"`
+		ID        string    `structmap:"id"`
+		Age       int       `structmap:"age"`
+		CreatedAt time.Time `structmap:"created_at"`
 	}
 
-	err := structmap.Unmarshal("map", "", m, &user)
+	err := structmap.Unmarshal(m, &user, "")
 
 	fmt.Println(user.ID, user.Age, user.CreatedAt.Format(time.DateOnly), err)
 	// Output: 42 30 2026-10-29 <nil>
@@ -58,15 +58,41 @@ func ExampleCodec() {
 
 	codec := structmap.Codec{Tag: "db"}
 
-	m, _ := codec.Marshal("", Item{SKU: "a1"})
+	m, _ := codec.Marshal(Item{SKU: "a1"}, "")
 	fmt.Println(m)
 
 	var item Item
-	_ = codec.Unmarshal("", map[string]any{"sku": "b2", "price": 5}, &item)
+	_ = codec.Unmarshal(map[string]any{"sku": "b2", "price": 5}, &item, "")
 	fmt.Println(item)
 	// Output:
 	// map[sku:a1]
 	// {b2 5}
+}
+
+func ExampleDiff() {
+	type Address struct {
+		City string `structmap:"city"`
+		Zip  string `structmap:"zip"`
+	}
+
+	type User struct {
+		ID      string   `structmap:"id"`
+		Name    string   `structmap:"name,omitempty"`
+		Tags    []string `structmap:"tags"`
+		Address Address  `structmap:"address"`
+	}
+
+	before := User{ID: "42", Name: "Ann", Tags: []string{"a"}, Address: Address{City: "Kyiv", Zip: "01001"}}
+	after := User{ID: "42", Tags: []string{"a", "b"}, Address: Address{City: "Lviv", Zip: "01001"}}
+
+	patch, _ := structmap.Diff(before, after, "")
+	fmt.Println(patch)
+
+	_ = structmap.Unmarshal(patch, &before, "")
+	fmt.Println(before)
+	// Output:
+	// map[address:map[city:Lviv] name:<nil> tags:[a b]]
+	// {42  [a b] {Lviv 01001}}
 }
 
 // Money is stored as a decimal string.
@@ -94,14 +120,14 @@ func (m *Money) UnmarshalMap(_ structmap.Scope, v any) error {
 
 func ExampleMarshaler() {
 	type Order struct {
-		Total Money `map:"total"`
+		Total Money `structmap:"total"`
 	}
 
-	m, _ := structmap.Marshal("map", "", Order{Total: 1250})
+	m, _ := structmap.Marshal(Order{Total: 1250}, "")
 	fmt.Println(m)
 
 	var order Order
-	err := structmap.Unmarshal("map", "", map[string]any{"total": "3.05"}, &order)
+	err := structmap.Unmarshal(map[string]any{"total": "3.05"}, &order, "")
 	fmt.Println(int64(order.Total), err)
 	// Output:
 	// map[total:12.50]
@@ -110,11 +136,11 @@ func ExampleMarshaler() {
 
 func ExampleFieldError() {
 	type Item struct {
-		Qty uint8 `map:"qty"`
+		Qty uint8 `structmap:"qty"`
 	}
 
 	var item Item
-	err := structmap.Unmarshal("map", "", map[string]any{"qty": 300}, &item)
+	err := structmap.Unmarshal(map[string]any{"qty": 300}, &item, "")
 
 	var fe *structmap.FieldError
 	fmt.Println(errors.As(err, &fe), fe.Path, errors.Is(err, structmap.ErrOverflow))
