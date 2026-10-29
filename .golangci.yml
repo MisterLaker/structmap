@@ -1,0 +1,49 @@
+version: "2"
+
+linters:
+  enable:
+    - errorlint
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - hugeParam
+        - whyNoLint
+
+    revive:
+      rules:
+        - name: exported
+        - name: error-strings
+        - name: errorf
+        - name: indent-error-flow
+        - name: receiver-naming
+        - name: superfluous-else
+        - name: var-naming
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - revive
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/MisterLaker/structmap

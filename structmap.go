@@ -1,0 +1,58 @@
+package structmap
+
+// Scope is the conversion context passed to Marshaler and Unmarshaler.
+type Scope struct {
+	Tag    string // struct tag key
+	Schema string // selected schema, empty selects every field
+}
+
+// Marshaler is implemented by types that convert themselves for Marshal.
+// The returned value is used as is, a squashed Marshaler should return map[string]any.
+type Marshaler interface {
+	MarshalMap(s Scope) (any, error)
+}
+
+// Unmarshaler is implemented by types that decode themselves for Unmarshal.
+// v is the value found under the field's key, a squashed Unmarshaler gets the whole parent map.
+type Unmarshaler interface {
+	UnmarshalMap(s Scope, v any) error
+}
+
+// Codec converts with a fixed struct tag key.
+type Codec struct {
+	Tag string
+}
+
+// Marshal converts the struct v (or a pointer to one) into a map, see the package documentation.
+// It returns nil for a nil v and panics when v is not a struct.
+func Marshal(tag, schema string, v any) (map[string]any, error) {
+	return Codec{Tag: tag}.Marshal(schema, v)
+}
+
+// Unmarshal decodes m into out, a non-nil pointer to a struct, see the package documentation.
+// It panics when out is not a non-nil pointer to a struct or Unmarshaler.
+func Unmarshal(tag, schema string, m map[string]any, out any) error {
+	return Codec{Tag: tag}.Unmarshal(schema, m, out)
+}
+
+// Marshal is Marshal with c.Tag.
+func (c Codec) Marshal(schema string, v any) (map[string]any, error) {
+	e := encodeState{scope: c.scope(schema), cache: cacheFor(c.Tag)}
+
+	return e.marshal(v)
+}
+
+// Unmarshal is Unmarshal with c.Tag.
+func (c Codec) Unmarshal(schema string, m map[string]any, out any) error {
+	d := decodeState{scope: c.scope(schema), cache: cacheFor(c.Tag)}
+
+	return d.unmarshal(m, out)
+}
+
+func (c Codec) scope(schema string) Scope {
+	if c.Tag == "" {
+		panic("structmap: empty tag")
+	}
+
+	return Scope{Tag: c.Tag, Schema: schema}
+}
