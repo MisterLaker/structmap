@@ -70,21 +70,21 @@ type tagCache struct {
 	types  sync.Map // reflect.Type -> *typeInfo
 }
 
-type cacheKey struct {
-	tag    string
-	inline bool
-}
-
-var tagCaches sync.Map // cacheKey -> *tagCache
+// tagCaches holds the tag caches without and with Codec.Inline. They are keyed by the tag alone,
+// a string key hashes faster than a struct of the tag and Inline, which Diff of small structs shows.
+var tagCaches [2]sync.Map // tag -> *tagCache
 
 func cacheFor(tag string, inline bool) *tagCache {
-	key := cacheKey{tag: tag, inline: inline}
+	caches := &tagCaches[0]
+	if inline {
+		caches = &tagCaches[1]
+	}
 
-	if cached, ok := tagCaches.Load(key); ok {
+	if cached, ok := caches.Load(tag); ok {
 		return cached.(*tagCache)
 	}
 
-	cached, _ := tagCaches.LoadOrStore(key, &tagCache{tag: tag, inline: inline})
+	cached, _ := caches.LoadOrStore(tag, &tagCache{tag: tag, inline: inline})
 
 	return cached.(*tagCache)
 }
