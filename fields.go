@@ -32,6 +32,11 @@ type field struct {
 	ptrZeroer bool // only a pointer to the field type has IsZero
 }
 
+// omitted reports whether omitempty or omitzero skip the value v of the field.
+func (f *field) omitted(v reflect.Value) bool {
+	return f.omitEmpty && isEmptyValue(v) || f.omitZero && isZeroValue(v, f)
+}
+
 func (f *field) inSchema(schema string) bool {
 	if schema == "" || f.schemas == nil {
 		return true
@@ -45,6 +50,7 @@ func (f *field) inSchema(schema string) bool {
 // typeInfo is what conversions need to know about a type, computed once per tag and type.
 type typeInfo struct {
 	fields []field // tagged fields of a struct type
+	simple bool    // every field has its own key: no squash and no duplicate names, for Diff
 
 	marshaler       bool // T implements Marshaler
 	ptrMarshaler    bool // only *T implements Marshaler
@@ -95,6 +101,7 @@ func (c *tagCache) newInfo(t reflect.Type) *typeInfo {
 
 	if t.Kind() == reflect.Struct {
 		info.fields = parseFields(t, c.tag)
+		info.simple = simpleFields(info.fields)
 		// Decided here, needsEncoding would look this struct up again.
 		info.needsEncoding = info.marshaler || info.ptrMarshaler || len(info.fields) > 0
 	} else {
@@ -102,6 +109,23 @@ func (c *tagCache) newInfo(t reflect.Type) *typeInfo {
 	}
 
 	return info
+}
+
+// simpleFields reports whether every field has its own key, so Diff compares them in place.
+func simpleFields(fields []field) bool {
+	for i := range fields {
+		if fields[i].squash {
+			return false
+		}
+
+		for j := range i {
+			if fields[j].name == fields[i].name {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 // equalMethod returns the index of the Equal(T) bool method of t, such as time.Time's, or -1.

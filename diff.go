@@ -3,6 +3,7 @@ package structmap
 import (
 	"reflect"
 	"slices"
+	"time"
 )
 
 // Diff is Diff with c.Tag.
@@ -94,6 +95,56 @@ func (d *diffState) mergeable(v reflect.Value) (reflect.Value, bool) {
 // Mergeable fields present on both sides are diffed into, the keys of a squashed group are
 // replaced together, everything else is replaced whole.
 func (d *diffState) structDiff(a, b reflect.Value) (map[string]any, error) {
+	info := d.enc.cache.info(a.Type())
+	if !info.simple {
+		return d.entriesDiff(a, b)
+	}
+
+	// Each field has its own key, compare them in place.
+	var result map[string]any
+
+	for i := range info.fields {
+		f := &info.fields[i]
+
+		if !f.inSchema(d.enc.scope.Schema) {
+			continue
+		}
+
+		x := diffEntry{field: f, v: a.Field(f.index)}
+		y := diffEntry{field: f, v: b.Field(f.index)}
+		omitX, omitY := f.omitted(x.v), f.omitted(y.v)
+
+		var (
+			changed = true
+			out     any
+			err     error
+		)
+
+		switch {
+		case omitX && omitY:
+			continue
+		case omitY:
+		case omitX:
+			out, err = d.out(f.name, y)
+		default:
+			changed, out, err = d.entryDiff(f.name, x, y)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		if changed {
+			result = setKey(result, f.name, out)
+		}
+	}
+
+	return result, nil
+}
+
+// entriesDiff is structDiff for structs whose keys come from several fields, through squash
+// or duplicate names, it resolves them as Marshal does first.
+func (d *diffState) entriesDiff(a, b reflect.Value) (map[string]any, error) {
 	ea, err := d.entries(a)
 	if err != nil {
 		return nil, err
@@ -106,14 +157,6 @@ func (d *diffState) structDiff(a, b reflect.Value) (map[string]any, error) {
 
 	var result map[string]any
 
-	set := func(k string, v any) {
-		if result == nil {
-			result = make(map[string]any)
-		}
-
-		result[k] = v
-	}
-
 	for k, y := range eb {
 		x, ok := ea[k]
 		if !ok {
@@ -122,7 +165,7 @@ func (d *diffState) structDiff(a, b reflect.Value) (map[string]any, error) {
 				return nil, err
 			}
 
-			set(k, out)
+			result = setKey(result, k, out)
 
 			continue
 		}
@@ -133,13 +176,13 @@ func (d *diffState) structDiff(a, b reflect.Value) (map[string]any, error) {
 		}
 
 		if changed {
-			set(k, out)
+			result = setKey(result, k, out)
 		}
 	}
 
 	for k := range ea {
 		if _, ok := eb[k]; !ok {
-			set(k, nil)
+			result = setKey(result, k, nil)
 		}
 	}
 
@@ -188,6 +231,10 @@ func (d *diffState) entryDiff(k string, x, y diffEntry) (changed bool, out any, 
 		}
 	}
 
+	if x.field != nil && y.field != nil {
+		return d.valueDiff(x.v, y.v)
+	}
+
 	outA, err := d.value(x)
 	if err != nil {
 		return false, nil, err
@@ -199,6 +246,273 @@ func (d *diffState) entryDiff(k string, x, y diffEntry) (changed bool, out any, 
 	}
 
 	return !d.equal(outA, outB), outB, nil
+}
+
+// valueDiff compares x and y and marshals y when they differ.
+func (d *diffState) valueDiff(x, y reflect.Value) (changed bool, out any, err error) {
+	same, ok, err := d.same(x, y)
+	if err != nil {
+		return false, nil, err
+	}
+
+	if ok {
+		if same {
+			return false, nil, nil
+		}
+
+		out, err := d.enc.value(y)
+
+		return true, out, err
+	}
+
+	outX, err := d.enc.value(x)
+	if err != nil {
+		return false, nil, err
+	}
+
+	outY, err := d.enc.value(y)
+	if err != nil {
+		return false, nil, err
+	}
+
+	return !d.equal(outX, outY), outY, nil
+}
+
+// sameValue reports whether x and y marshal to equal values, marshaling them only when same cannot tell.
+func (d *diffState) sameValue(x, y reflect.Value) (bool, error) {
+	same, ok, err := d.same(x, y)
+	if ok || err != nil {
+		return same, err
+	}
+
+	outX, err := d.enc.value(x)
+	if err != nil {
+		return false, err
+	}
+
+	outY, err := d.enc.value(y)
+	if err != nil {
+		return false, err
+	}
+
+	return d.equal(outX, outY), nil
+}
+
+// same reports whether x and y marshal to equal values without marshaling them, as equal compares them.
+// ok is false when it cannot tell: for Marshalers, values of different types or nil on one side only
+// (the other may marshal to nil too), structs with squash fields and maps with encoding.TextMarshaler keys.
+func (d *diffState) same(x, y reflect.Value) (same, ok bool, err error) {
+	nilX, nilY := isNil(x), isNil(y)
+	if nilX || nilY {
+		return nilX && nilY, nilX && nilY, nil
+	}
+
+	if x.Type() != y.Type() {
+		return false, false, nil
+	}
+
+	info := d.enc.cache.info(x.Type())
+
+	if info.marshaler || info.ptrMarshaler {
+		return false, false, nil
+	}
+
+	switch x.Kind() {
+	case reflect.Interface:
+		return d.same(x.Elem(), y.Elem())
+
+	case reflect.Pointer:
+		if x.UnsafePointer() == y.UnsafePointer() {
+			return true, true, nil
+		}
+
+		if err := d.enc.enter(x); err != nil {
+			return false, true, err
+		}
+		defer d.enc.leave(x)
+
+		return d.same(x.Elem(), y.Elem())
+
+	default:
+	}
+
+	if !info.needsEncoding {
+		return d.leafSame(x, y, info), true, nil
+	}
+
+	switch x.Kind() {
+	case reflect.Struct:
+		if !info.simple {
+			return false, false, nil
+		}
+
+		same, err := d.sameFields(x, y, info)
+
+		return same, true, err
+
+	case reflect.Slice:
+		if x.IsNil() || y.IsNil() {
+			return x.IsNil() && y.IsNil(), true, nil
+		}
+
+		if x.Len() != y.Len() {
+			return false, true, nil
+		}
+
+		if x.UnsafePointer() == y.UnsafePointer() {
+			return true, true, nil
+		}
+
+		if err := d.enc.enter(x); err != nil {
+			return false, true, err
+		}
+		defer d.enc.leave(x)
+
+		same, err := d.sameItems(x, y)
+
+		return same, true, err
+
+	case reflect.Array:
+		same, err := d.sameItems(x, y)
+
+		return same, true, err
+
+	case reflect.Map:
+		if x.IsNil() || y.IsNil() {
+			return x.IsNil() && y.IsNil(), true, nil
+		}
+
+		if x.Len() != y.Len() {
+			return false, true, nil
+		}
+
+		if x.UnsafePointer() == y.UnsafePointer() {
+			return true, true, nil
+		}
+
+		if x.Type().Key().Kind() != reflect.String && x.Type().Key().Implements(textMarshalerType) {
+			return false, false, nil
+		}
+
+		if err := d.enc.enter(x); err != nil {
+			return false, true, err
+		}
+		defer d.enc.leave(x)
+
+		same, err := d.sameEntries(x, y)
+
+		return same, true, err
+
+	default:
+		return false, false, nil
+	}
+}
+
+func (d *diffState) sameFields(x, y reflect.Value, info *typeInfo) (bool, error) {
+	for i := range info.fields {
+		f := &info.fields[i]
+
+		if !f.inSchema(d.enc.scope.Schema) {
+			continue
+		}
+
+		fx, fy := x.Field(f.index), y.Field(f.index)
+
+		omitX, omitY := f.omitted(fx), f.omitted(fy)
+		if omitX || omitY {
+			if omitX != omitY {
+				return false, nil
+			}
+
+			continue
+		}
+
+		d.enc.path = append(d.enc.path, segment{kind: segmentField, name: f.name})
+		same, err := d.sameValue(fx, fy)
+		d.enc.path = d.enc.path[:len(d.enc.path)-1]
+
+		if err != nil || !same {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func (d *diffState) sameItems(x, y reflect.Value) (bool, error) {
+	for i := range x.Len() {
+		d.enc.path = append(d.enc.path, segment{kind: segmentIndex, index: i})
+		same, err := d.sameValue(x.Index(i), y.Index(i))
+		d.enc.path = d.enc.path[:len(d.enc.path)-1]
+
+		if err != nil || !same {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+// sameEntries compares maps of the same length with string or integer keys, which Marshal formats one to one.
+func (d *diffState) sameEntries(x, y reflect.Value) (bool, error) {
+	iter := x.MapRange()
+	for iter.Next() {
+		yv := y.MapIndex(iter.Key())
+		if !yv.IsValid() {
+			return false, nil
+		}
+
+		key, err := mapKey(iter.Key())
+		if err != nil {
+			return false, err
+		}
+
+		d.enc.path = append(d.enc.path, segment{kind: segmentKey, name: key})
+		same, err := d.sameValue(iter.Value(), yv)
+		d.enc.path = d.enc.path[:len(d.enc.path)-1]
+
+		if err != nil || !same {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+// leafSame compares values Marshal keeps as is, as equal does, without boxing them when it can.
+func (d *diffState) leafSame(x, y reflect.Value, info *typeInfo) bool {
+	if info.equal >= 0 {
+		if tx, ok := reflect.TypeAssert[time.Time](x); ok {
+			ty, _ := reflect.TypeAssert[time.Time](y)
+
+			return tx.Equal(ty)
+		}
+
+		return x.Method(info.equal).Call([]reflect.Value{y})[0].Bool()
+	}
+
+	switch x.Kind() {
+	case reflect.Bool:
+		return x.Bool() == y.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return x.Int() == y.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return x.Uint() == y.Uint()
+	case reflect.Float32, reflect.Float64:
+		return x.Float() == y.Float()
+	case reflect.Complex64, reflect.Complex128:
+		return x.Complex() == y.Complex()
+	case reflect.String:
+		return x.String() == y.String()
+	default:
+	}
+
+	// Pointers to the values box without allocating and compare the same.
+	if x.CanAddr() && y.CanAddr() {
+		return reflect.DeepEqual(x.Addr().Interface(), y.Addr().Interface())
+	}
+
+	return reflect.DeepEqual(x.Interface(), y.Interface())
 }
 
 // out marshals the value of e under the key k.
@@ -249,7 +563,7 @@ func (d *diffState) entries(v reflect.Value) (map[string]diffEntry, error) {
 			continue
 		}
 
-		if f.omitEmpty && isEmptyValue(fv) || f.omitZero && isZeroValue(fv, f) {
+		if f.omitted(fv) {
 			continue
 		}
 
@@ -338,6 +652,12 @@ func (d *diffState) equal(x, y any) bool {
 		return x == nil && y == nil
 	}
 
+	if tx, ok := x.(time.Time); ok {
+		ty, ok := y.(time.Time)
+
+		return ok && tx.Equal(ty)
+	}
+
 	vx, vy := reflect.ValueOf(x), reflect.ValueOf(y)
 	if vx.Type() != vy.Type() {
 		return false
@@ -348,4 +668,19 @@ func (d *diffState) equal(x, y any) bool {
 	}
 
 	return reflect.DeepEqual(x, y)
+}
+
+// isNil reports whether Marshal converts v to nil before looking at its type.
+func isNil(v reflect.Value) bool {
+	return !v.IsValid() || (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) && v.IsNil()
+}
+
+func setKey(m map[string]any, k string, v any) map[string]any {
+	if m == nil {
+		m = make(map[string]any)
+	}
+
+	m[k] = v
+
+	return m
 }

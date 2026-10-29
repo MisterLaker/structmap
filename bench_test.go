@@ -42,7 +42,7 @@ func newBenchNested() benchNested {
 	}
 
 	return benchNested{
-		Flat:   benchFlat{ID: "1", Title: "t", Body: "b", Views: 7, Active: true, CreatedAt: time.Now()},
+		Flat:   benchFlat{ID: "1", Title: "t", Body: "b", Views: 7, Active: true, CreatedAt: time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)},
 		Meta:   &benchMeta{Author: "a", Version: 2},
 		Items:  items,
 		Labels: map[string]string{"k": "v"},
@@ -94,15 +94,13 @@ func BenchmarkUnmarshal(b *testing.B) {
 }
 
 func BenchmarkDiff(b *testing.B) {
-	nestedA := newBenchNested()
-	flatA := nestedA.Flat
-
-	flatB := flatA
+	// Independent values, so shared pointers do not shortcut the comparison.
+	flatA, flatB := newBenchNested().Flat, newBenchNested().Flat
 	flatB.Title = "changed"
 
-	nestedB := nestedA
-	nestedB.Meta = &benchMeta{Author: "a", Version: 3}
-	nestedB.Labels = map[string]string{"k": "w"}
+	nestedA, nestedB := newBenchNested(), newBenchNested()
+	nestedB.Meta.Version = 3
+	nestedB.Labels["k"] = "w"
 
 	b.Run("flat", func(b *testing.B) {
 		b.ReportAllocs()
