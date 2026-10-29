@@ -194,6 +194,23 @@ fields that decoded fine stay set.
 
 Sentinels: `ErrType`, `ErrOverflow`, `ErrFraction`, `ErrNegative`, `ErrLength`, `ErrCycle`.
 
+## Benchmarks
+
+| Benchmark | Time | Memory | Allocations |
+|---|---|---|---|
+| Marshal, flat | 398 ns | 464 B | 4 |
+| Marshal, nested | 4.6 µs | 5488 B | 74 |
+| Unmarshal, flat | 259 ns | 128 B | 2 |
+| Unmarshal, nested | 2.5 µs | 976 B | 7 |
+| Diff, flat | 543 ns | 224 B | 3 |
+| Diff, nested | 6.9 µs | 3976 B | 23 |
+
+- **flat**: a struct of 6 fields (strings, `int64`, `bool`, `time.Time`).
+- **nested**: the flat struct squashed, plus a pointer to a struct, a slice of 10 structs and a map.
+- **Diff** compares two independent values that differ in one field (flat) or two nested keys (nested).
+
+Go 1.27, Apple M2 (linux/arm64 container), medians of 3 runs. Reproduce with `make bench`, see [bench_test.go](bench_test.go).
+
 ## Comparison
 
 ### Struct ↔ map conversion
