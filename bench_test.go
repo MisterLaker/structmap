@@ -57,7 +57,7 @@ func BenchmarkMarshal(b *testing.B) {
 		b.ReportAllocs()
 
 		for b.Loop() {
-			_, _ = structmap.Marshal("full", flat)
+			_, _ = structmap.Marshal(flat, "full")
 		}
 	})
 
@@ -65,21 +65,21 @@ func BenchmarkMarshal(b *testing.B) {
 		b.ReportAllocs()
 
 		for b.Loop() {
-			_, _ = structmap.Marshal("full", nested)
+			_, _ = structmap.Marshal(nested, "full")
 		}
 	})
 }
 
 func BenchmarkUnmarshal(b *testing.B) {
-	flat, _ := structmap.Marshal("full", newBenchNested().Flat)
-	nested, _ := structmap.Marshal("full", newBenchNested())
+	flat, _ := structmap.Marshal(newBenchNested().Flat, "full")
+	nested, _ := structmap.Marshal(newBenchNested(), "full")
 
 	b.Run("flat", func(b *testing.B) {
 		b.ReportAllocs()
 
 		for b.Loop() {
 			var out benchFlat
-			_ = structmap.Unmarshal("full", flat, &out)
+			_ = structmap.Unmarshal(flat, &out, "full")
 		}
 	})
 
@@ -88,7 +88,7 @@ func BenchmarkUnmarshal(b *testing.B) {
 
 		for b.Loop() {
 			var out benchNested
-			_ = structmap.Unmarshal("full", nested, &out)
+			_ = structmap.Unmarshal(nested, &out, "full")
 		}
 	})
 }
@@ -106,7 +106,7 @@ func BenchmarkDiff(b *testing.B) {
 		b.ReportAllocs()
 
 		for b.Loop() {
-			_, _ = structmap.Diff("full", flatA, flatB)
+			_, _ = structmap.Diff(flatA, flatB, "full")
 		}
 	})
 
@@ -114,7 +114,7 @@ func BenchmarkDiff(b *testing.B) {
 		b.ReportAllocs()
 
 		for b.Loop() {
-			_, _ = structmap.Diff("full", nestedA, nestedB)
+			_, _ = structmap.Diff(nestedA, nestedB, "full")
 		}
 	})
 }

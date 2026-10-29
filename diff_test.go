@@ -147,7 +147,7 @@ type diffExtended diffSub1
 func (e diffExtended) MarshalMap(s Scope) (any, error) {
 	type plain diffExtended
 
-	m, err := s.Codec().Marshal(s.Schema, plain(e))
+	m, err := s.Codec().Marshal(plain(e), s.Schema)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (e *diffExtended) UnmarshalMap(s Scope, v any) error {
 		return errors.New("extended: missing marker")
 	}
 
-	return s.Codec().Unmarshal(s.Schema, m, (*plain)(e))
+	return s.Codec().Unmarshal(m, (*plain)(e), s.Schema)
 }
 
 // diffNode references itself to build cycles.
@@ -268,7 +268,7 @@ func TestDiff(t *testing.T) {
 			a, b := data(), data()
 			tt.change(&b)
 
-			got, err := diffCodec.Diff(tt.schema, a, b)
+			got, err := diffCodec.Diff(a, b, tt.schema)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 
@@ -283,7 +283,7 @@ func TestDiff(t *testing.T) {
 	t.Run("nested added", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := diffCodec.Diff("", diffData{}, diffData{Sub1: &diffSub1{V2: "y"}})
+		got, err := diffCodec.Diff(diffData{}, diffData{Sub1: &diffSub1{V2: "y"}}, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"sub": map[string]any{"v2": "y"}}, got)
 	})
@@ -308,7 +308,7 @@ func TestDiff(t *testing.T) {
 		b.Plain = map[string]int{"a": 1, "b": 3}
 		b.Arr[1].Type = "c"
 
-		got, err := diffCodec.Diff("", a(), b)
+		got, err := diffCodec.Diff(a(), b, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
 			"subs":    []any{map[string]any{"type": "a", "v2": ""}, map[string]any{"type": "c", "v2": ""}},
@@ -324,7 +324,7 @@ func TestDiff(t *testing.T) {
 	t.Run("nil and empty differ", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := diffCodec.Diff("", diffLeaves{}, diffLeaves{Subs: []diffSub1{}})
+		got, err := diffCodec.Diff(diffLeaves{}, diffLeaves{Subs: []diffSub1{}}, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"subs": []any{}}, got)
 	})
@@ -339,14 +339,14 @@ func TestDiff(t *testing.T) {
 		hidden := a()
 		hidden.Sub.Type, hidden.Sub.V2 = "t", "t"
 
-		got, err := diffCodec.Diff("", a(), hidden)
+		got, err := diffCodec.Diff(a(), hidden, "")
 		require.NoError(t, err)
 		assert.Nil(t, got, "keys the parent sets hide the squashed ones")
 
 		uncovered := a()
 		uncovered.Type = ""
 
-		got, err = diffCodec.Diff("", a(), uncovered)
+		got, err = diffCodec.Diff(a(), uncovered, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"type": "s"}, got)
 
@@ -367,11 +367,11 @@ func TestDiff(t *testing.T) {
 		changed := a()
 		changed.Sub = &diffSub1{Type: "x", V2: "z"}
 
-		got, err := diffCodec.Diff("", a(), changed)
+		got, err := diffCodec.Diff(a(), changed, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"v2": "z"}, got)
 
-		got, err = diffCodec.Diff("", a(), squashPtr{ID: "1"})
+		got, err = diffCodec.Diff(a(), squashPtr{ID: "1"}, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"type": nil, "v2": nil}, got)
 
@@ -389,7 +389,7 @@ func TestDiff(t *testing.T) {
 		b := a()
 		b.V2, b.Sub.V2 = "q", "t"
 
-		got, err := diffCodec.Diff("", a(), b)
+		got, err := diffCodec.Diff(a(), b, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"v2": "t"}, got)
 
@@ -413,7 +413,7 @@ func TestDiff(t *testing.T) {
 		b.Point.Lat = 3
 		b.Profile.Name = "m"
 
-		got, err := diffCodec.Diff("", a(), b)
+		got, err := diffCodec.Diff(a(), b, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
 			"price": "13.00",
@@ -424,7 +424,7 @@ func TestDiff(t *testing.T) {
 
 		assertPatch(t, "", a, b)
 
-		got, err = diffCodec.Diff("public", a(), b)
+		got, err = diffCodec.Diff(a(), b, "public")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"price": "13.00", "point": []float64{3, 2}, "name": "m"}, got)
 	})
@@ -435,11 +435,11 @@ func TestDiff(t *testing.T) {
 		a := func() diffExtended { return diffExtended{Type: "x", V2: "y"} }
 		b := diffExtended{Type: "z", V2: "y"}
 
-		got, err := diffCodec.Diff("", a(), b)
+		got, err := diffCodec.Diff(a(), b, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"type": "z", "v2": "y", "extended": true}, got)
 
-		got, err = diffCodec.Diff("", a(), a())
+		got, err = diffCodec.Diff(a(), a(), "")
 		require.NoError(t, err)
 		assert.Nil(t, got)
 
@@ -451,15 +451,15 @@ func TestDiff(t *testing.T) {
 
 		b := &diffSub1{Type: "x", V2: "y"}
 
-		got, err := diffCodec.Diff("", nil, b)
+		got, err := diffCodec.Diff(nil, b, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"type": "x", "v2": "y"}, got)
 
-		got, err = diffCodec.Diff("", b, nil)
+		got, err = diffCodec.Diff(b, nil, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"type": nil, "v2": nil}, got)
 
-		got, err = diffCodec.Diff[*diffSub1]("", nil, nil)
+		got, err = diffCodec.Diff[*diffSub1](nil, nil, "")
 		require.NoError(t, err)
 		assert.Nil(t, got)
 	})
@@ -467,7 +467,7 @@ func TestDiff(t *testing.T) {
 	t.Run("pointer roots", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := diffCodec.Diff("", &diffSub1{V2: "a"}, &diffSub1{V2: "b"})
+		got, err := diffCodec.Diff(&diffSub1{V2: "a"}, &diffSub1{V2: "b"}, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"v2": "b"}, got)
 	})
@@ -475,11 +475,11 @@ func TestDiff(t *testing.T) {
 	t.Run("interface roots", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := diffCodec.Diff[any]("", diffSub1{V2: "a"}, &diffSub1{V2: "b"})
+		got, err := diffCodec.Diff[any](diffSub1{V2: "a"}, &diffSub1{V2: "b"}, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"v2": "b"}, got)
 
-		got, err = diffCodec.Diff[any]("", diffSub1{V2: "a"}, diffSub2{Kind: "k"})
+		got, err = diffCodec.Diff[any](diffSub1{V2: "a"}, diffSub2{Kind: "k"}, "")
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"v2": nil, "kind": "k"}, got)
 	})
@@ -494,7 +494,7 @@ func TestDiff(t *testing.T) {
 			return n
 		}
 
-		_, err := diffCodec.Diff("", cycle(), cycle())
+		_, err := diffCodec.Diff(cycle(), cycle(), "")
 		require.ErrorIs(t, err, ErrCycle)
 	})
 
@@ -514,13 +514,13 @@ func TestDiff(t *testing.T) {
 			Any any `tag:"any"`
 		}{Any: diffFailing{Bad: true}}}
 
-		_, err := diffCodec.Diff("", a, b)
+		_, err := diffCodec.Diff(a, b, "")
 
 		var fe *FieldError
 		require.ErrorAs(t, err, &fe)
 		assert.Equal(t, "sub.any", fe.Path)
 
-		_, err = diffCodec.Diff("", diffMarshalers{Any: diffFailing{Bad: true}}, diffMarshalers{})
+		_, err = diffCodec.Diff(diffMarshalers{Any: diffFailing{Bad: true}}, diffMarshalers{}, "")
 		require.ErrorAs(t, err, &fe)
 		assert.Equal(t, "any", fe.Path)
 		assert.EqualError(t, errors.Unwrap(err), "failing: bad")
@@ -529,8 +529,8 @@ func TestDiff(t *testing.T) {
 	t.Run("not a struct", func(t *testing.T) {
 		t.Parallel()
 
-		assert.Panics(t, func() { _, _ = diffCodec.Diff("", 1, 2) })
-		assert.PanicsWithValue(t, "structmap: empty tag", func() { _, _ = Codec{}.Diff("", diffData{}, diffData{}) })
+		assert.Panics(t, func() { _, _ = diffCodec.Diff(1, 2, "") })
+		assert.PanicsWithValue(t, "structmap: empty tag", func() { _, _ = Codec{}.Diff(diffData{}, diffData{}, "") })
 	})
 }
 
@@ -539,16 +539,16 @@ func TestDiff(t *testing.T) {
 func assertPatch[T any](t *testing.T, schema string, a func() T, b T) {
 	t.Helper()
 
-	patch, err := diffCodec.Diff(schema, a(), b)
+	patch, err := diffCodec.Diff(a(), b, schema)
 	require.NoError(t, err)
 
 	got := a()
-	require.NoError(t, diffCodec.Unmarshal(schema, patch, &got))
+	require.NoError(t, diffCodec.Unmarshal(patch, &got, schema))
 
-	want, err := diffCodec.Marshal(schema, b)
+	want, err := diffCodec.Marshal(b, schema)
 	require.NoError(t, err)
 
-	gotMap, err := diffCodec.Marshal(schema, got)
+	gotMap, err := diffCodec.Marshal(got, schema)
 	require.NoError(t, err)
 
 	assert.Equal(t, want, gotMap)

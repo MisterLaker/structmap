@@ -36,31 +36,31 @@ var defaultCodec = Codec{Tag: DefaultTag}
 
 // Marshal converts the struct v (or a pointer to one) into a map, see the package documentation.
 // It returns nil for a nil v and panics when v is not a struct.
-func Marshal(schema string, v any) (map[string]any, error) {
-	return defaultCodec.Marshal(schema, v)
+func Marshal(v any, schema string) (map[string]any, error) {
+	return defaultCodec.Marshal(v, schema)
 }
 
 // Unmarshal decodes m into out, a non-nil pointer to a struct, see the package documentation.
 // It panics when out is not a non-nil pointer to a struct or Unmarshaler.
-func Unmarshal(schema string, m map[string]any, out any) error {
-	return defaultCodec.Unmarshal(schema, m, out)
+func Unmarshal(m map[string]any, out any, schema string) error {
+	return defaultCodec.Unmarshal(m, out, schema)
 }
 
 // Diff returns the patch from a to b, see the package documentation.
 // It panics when T is not a struct or a pointer to one.
-func Diff[T any](schema string, a, b T) (map[string]any, error) {
-	return defaultCodec.Diff(schema, a, b)
+func Diff[T any](a, b T, schema string) (map[string]any, error) {
+	return defaultCodec.Diff(a, b, schema)
 }
 
 // Marshal is Marshal with c.Tag.
-func (c Codec) Marshal(schema string, v any) (map[string]any, error) {
+func (c Codec) Marshal(v any, schema string) (map[string]any, error) {
 	e := encodeState{scope: c.scope(schema), cache: cacheFor(c.Tag)}
 
 	return e.marshal(v)
 }
 
 // Unmarshal is Unmarshal with c.Tag.
-func (c Codec) Unmarshal(schema string, m map[string]any, out any) error {
+func (c Codec) Unmarshal(m map[string]any, out any, schema string) error {
 	d := decodeState{scope: c.scope(schema), cache: cacheFor(c.Tag)}
 
 	return d.unmarshal(m, out)

@@ -24,8 +24,8 @@ func ExampleMarshal() {
 
 	user := User{ID: "42", Email: "a@example.com", Address: Address{City: "Kyiv", Zip: "01001"}}
 
-	public, _ := structmap.Marshal("public", user)
-	full, _ := structmap.Marshal("", user)
+	public, _ := structmap.Marshal(user, "public")
+	full, _ := structmap.Marshal(user, "")
 
 	fmt.Println(public)
 	fmt.Println(full)
@@ -44,7 +44,7 @@ func ExampleUnmarshal() {
 		CreatedAt time.Time `structmap:"created_at"`
 	}
 
-	err := structmap.Unmarshal("", m, &user)
+	err := structmap.Unmarshal(m, &user, "")
 
 	fmt.Println(user.ID, user.Age, user.CreatedAt.Format(time.DateOnly), err)
 	// Output: 42 30 2026-10-29 <nil>
@@ -58,11 +58,11 @@ func ExampleCodec() {
 
 	codec := structmap.Codec{Tag: "db"}
 
-	m, _ := codec.Marshal("", Item{SKU: "a1"})
+	m, _ := codec.Marshal(Item{SKU: "a1"}, "")
 	fmt.Println(m)
 
 	var item Item
-	_ = codec.Unmarshal("", map[string]any{"sku": "b2", "price": 5}, &item)
+	_ = codec.Unmarshal(map[string]any{"sku": "b2", "price": 5}, &item, "")
 	fmt.Println(item)
 	// Output:
 	// map[sku:a1]
@@ -85,10 +85,10 @@ func ExampleDiff() {
 	before := User{ID: "42", Name: "Ann", Tags: []string{"a"}, Address: Address{City: "Kyiv", Zip: "01001"}}
 	after := User{ID: "42", Tags: []string{"a", "b"}, Address: Address{City: "Lviv", Zip: "01001"}}
 
-	patch, _ := structmap.Diff("", before, after)
+	patch, _ := structmap.Diff(before, after, "")
 	fmt.Println(patch)
 
-	_ = structmap.Unmarshal("", patch, &before)
+	_ = structmap.Unmarshal(patch, &before, "")
 	fmt.Println(before)
 	// Output:
 	// map[address:map[city:Lviv] name:<nil> tags:[a b]]
@@ -123,11 +123,11 @@ func ExampleMarshaler() {
 		Total Money `structmap:"total"`
 	}
 
-	m, _ := structmap.Marshal("", Order{Total: 1250})
+	m, _ := structmap.Marshal(Order{Total: 1250}, "")
 	fmt.Println(m)
 
 	var order Order
-	err := structmap.Unmarshal("", map[string]any{"total": "3.05"}, &order)
+	err := structmap.Unmarshal(map[string]any{"total": "3.05"}, &order, "")
 	fmt.Println(int64(order.Total), err)
 	// Output:
 	// map[total:12.50]
@@ -140,7 +140,7 @@ func ExampleFieldError() {
 	}
 
 	var item Item
-	err := structmap.Unmarshal("", map[string]any{"qty": 300}, &item)
+	err := structmap.Unmarshal(map[string]any{"qty": 300}, &item, "")
 
 	var fe *structmap.FieldError
 	fmt.Println(errors.As(err, &fe), fe.Path, errors.Is(err, structmap.ErrOverflow))

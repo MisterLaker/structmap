@@ -28,14 +28,14 @@ type User struct {
 
 user := User{ID: "42", Email: "a@example.com", Address: Address{City: "Kyiv", Zip: "01001"}}
 
-public, err := structmap.Marshal("public", user)
+public, err := structmap.Marshal(user, "public")
 // map[address:map[city:Kyiv] id:42]
 
-full, err := structmap.Marshal("", user)
+full, err := structmap.Marshal(user, "")
 // map[address:map[city:Kyiv zip:01001] email:a@example.com id:42]
 
 var decoded User
-err = structmap.Unmarshal("", full, &decoded)
+err = structmap.Unmarshal(full, &decoded, "")
 ```
 
 The package-level functions use the `structmap` tag (`structmap.DefaultTag`). For another tag, use a `Codec`:
@@ -43,8 +43,8 @@ The package-level functions use the `structmap` tag (`structmap.DefaultTag`). Fo
 ```go
 var db = structmap.Codec{Tag: "db"}
 
-m, err := db.Marshal("search", doc)
-err = db.Unmarshal("search", m, &doc)
+m, err := db.Marshal(doc, "search")
+err = db.Unmarshal(m, &doc, "search")
 ```
 
 ## Tags
@@ -126,10 +126,10 @@ type User struct {
 before := User{ID: "42", Name: "Ann", Tags: []string{"a"}, Address: Address{City: "Kyiv", Zip: "01001"}}
 after := User{ID: "42", Tags: []string{"a", "b"}, Address: Address{City: "Lviv", Zip: "01001"}}
 
-patch, err := structmap.Diff("", before, after)
+patch, err := structmap.Diff(before, after, "")
 // map[address:map[city:Lviv] name:<nil> tags:[a b]]
 
-err = structmap.Unmarshal("", patch, &before) // before now marshals as after
+err = structmap.Unmarshal(patch, &before, "") // before now marshals as after
 ```
 
 - Only keys that differ are kept. Keys `b` drops (`omitempty`, `omitzero`) are `nil`, which resets the field.
@@ -164,7 +164,7 @@ with `s.Codec()`, so the caller's tag is kept:
 func (d Doc) MarshalMap(s structmap.Scope) (any, error) {
 	type plain Doc
 
-	m, err := s.Codec().Marshal(s.Schema, plain(d))
+	m, err := s.Codec().Marshal(plain(d), s.Schema)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ Invalid arguments and invalid tags are programming errors and panic.
 Data errors are returned as `*structmap.FieldError` with the path of the field:
 
 ```go
-err := structmap.Unmarshal("", map[string]any{"qty": 300}, &item)
+err := structmap.Unmarshal(map[string]any{"qty": 300}, &item, "")
 // qty: overflow: cannot decode 300 into uint8
 
 var fe *structmap.FieldError

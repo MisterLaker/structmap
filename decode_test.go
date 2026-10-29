@@ -39,7 +39,7 @@ func TestUnmarshal(t *testing.T) {
 			t.Parallel()
 
 			var got testData
-			require.NoError(t, codec.Unmarshal(tt.schema, marshal(t, tt.schema, full), &got))
+			require.NoError(t, codec.Unmarshal(marshal(t, tt.schema, full), &got, tt.schema))
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -54,7 +54,7 @@ func TestUnmarshal(t *testing.T) {
 		}`), &d))
 
 		var got testData
-		require.NoError(t, codec.Unmarshal("", d, &got))
+		require.NoError(t, codec.Unmarshal(d, &got, ""))
 		assert.Equal(t, testData{
 			ID:        "1",
 			V1:        "a",
@@ -78,7 +78,7 @@ func TestUnmarshal(t *testing.T) {
 		}`), &d))
 
 		var got testLeaves
-		require.NoError(t, codec.Unmarshal("", d, &got))
+		require.NoError(t, codec.Unmarshal(d, &got, ""))
 		assert.Equal(t, testLeaves{
 			Name:    "n",
 			Ptr:     new(42),
@@ -102,7 +102,7 @@ func TestUnmarshal(t *testing.T) {
 		}
 
 		var got testMapKeys
-		require.NoError(t, codec.Unmarshal("", marshal(t, "", input), &got))
+		require.NoError(t, codec.Unmarshal(marshal(t, "", input), &got, ""))
 		assert.Equal(t, input, got)
 	})
 
@@ -112,10 +112,10 @@ func TestUnmarshal(t *testing.T) {
 		sub := &testSub1{V1: "keep", V2: "keep"}
 		got := testData{V1: "keep", Sub1: sub}
 
-		require.NoError(t, codec.Unmarshal("", map[string]any{
+		require.NoError(t, codec.Unmarshal(map[string]any{
 			"id":  "1",
 			"sub": map[string]any{"type": "x"},
-		}, &got))
+		}, &got, ""))
 
 		assert.Equal(t, testData{ID: "1", V1: "keep", Sub1: &testSub1{Type: "x", V1: "keep", V2: "keep"}}, got)
 		assert.Same(t, sub, got.Sub1, "existing pointer is reused")
@@ -126,9 +126,9 @@ func TestUnmarshal(t *testing.T) {
 
 		got := testData{V1: "a", Sub1: &testSub1{}, CreatedAt: ts}
 
-		require.NoError(t, codec.Unmarshal("", map[string]any{
+		require.NoError(t, codec.Unmarshal(map[string]any{
 			"v1": nil, "sub": nil, "created_at": nil,
-		}, &got))
+		}, &got, ""))
 
 		assert.Equal(t, testData{}, got)
 	})
@@ -137,9 +137,9 @@ func TestUnmarshal(t *testing.T) {
 		t.Parallel()
 
 		var got testData
-		require.NoError(t, codec.Unmarshal("schema2", map[string]any{
+		require.NoError(t, codec.Unmarshal(map[string]any{
 			"v2": "b", "kind": "k", "sub": map[string]any{"type": "x"},
-		}, &got))
+		}, &got, "schema2"))
 
 		assert.Equal(t, testData{}, got)
 	})
@@ -153,11 +153,11 @@ func TestUnmarshal(t *testing.T) {
 		}
 
 		var empty squashPtr
-		require.NoError(t, codec.Unmarshal("", map[string]any{"id": "1"}, &empty))
+		require.NoError(t, codec.Unmarshal(map[string]any{"id": "1"}, &empty, ""))
 		assert.Equal(t, squashPtr{ID: "1"}, empty)
 
 		var set squashPtr
-		require.NoError(t, codec.Unmarshal("", map[string]any{"id": "1", "type": "x"}, &set))
+		require.NoError(t, codec.Unmarshal(map[string]any{"id": "1", "type": "x"}, &set, ""))
 		assert.Equal(t, squashPtr{ID: "1", Sub: &testSub1{Type: "x"}}, set)
 	})
 
@@ -171,7 +171,7 @@ func TestUnmarshal(t *testing.T) {
 		}
 
 		var got collision
-		require.NoError(t, codec.Unmarshal("", map[string]any{"type": "t", "v1": "w", "v2": "v"}, &got))
+		require.NoError(t, codec.Unmarshal(map[string]any{"type": "t", "v1": "w", "v2": "v"}, &got, ""))
 		assert.Equal(t, collision{Type: "t", V2: "v", Sub: testSub1{Type: "t", V1: "w", V2: "v"}}, got)
 	})
 
@@ -179,7 +179,7 @@ func TestUnmarshal(t *testing.T) {
 		t.Parallel()
 
 		var got testOverwrite
-		require.NoError(t, codec.Unmarshal("schema1", map[string]any{"type": "t", "v2": "v"}, &got))
+		require.NoError(t, codec.Unmarshal(map[string]any{"type": "t", "v2": "v"}, &got, "schema1"))
 		assert.Equal(t, testOverwrite{Type: "t", V2: "v", Sub: testSub1{Type: "t", V2: "v"}}, got)
 	})
 
@@ -187,14 +187,14 @@ func TestUnmarshal(t *testing.T) {
 		t.Parallel()
 
 		var got testNumbers
-		require.NoError(t, codec.Unmarshal("", map[string]any{
+		require.NoError(t, codec.Unmarshal(map[string]any{
 			"i":   float64(3),
 			"u":   int64(5),
 			"f":   7,
 			"s":   "ok",
 			"b":   true,
 			"arr": []any{1.0, int8(2)},
-		}, &got))
+		}, &got, ""))
 
 		assert.Equal(t, testNumbers{I: 3, U: 5, F: 7, S: "ok", B: true, Arr: [2]int{1, 2}}, got)
 	})
@@ -207,14 +207,14 @@ func TestUnmarshalErrors(t *testing.T) {
 		t.Parallel()
 
 		var got testNumbers
-		err := codec.Unmarshal("", map[string]any{
+		err := codec.Unmarshal(map[string]any{
 			"i":   3.5,
 			"u":   -1,
 			"f":   "x",
 			"s":   1,
 			"b":   true,
 			"arr": []any{1},
-		}, &got)
+		}, &got, "")
 
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "i: not an integer: cannot decode 3.5 into int8")
@@ -235,7 +235,7 @@ func TestUnmarshalErrors(t *testing.T) {
 		t.Parallel()
 
 		var got testNumbers
-		err := codec.Unmarshal("", map[string]any{"i": 300}, &got)
+		err := codec.Unmarshal(map[string]any{"i": 300}, &got, "")
 
 		var fe *structmap.FieldError
 		require.ErrorAs(t, err, &fe)
@@ -247,7 +247,7 @@ func TestUnmarshalErrors(t *testing.T) {
 		t.Parallel()
 
 		var got testNumbers
-		err := codec.Unmarshal("", map[string]any{"i": 300, "u": 1e30}, &got)
+		err := codec.Unmarshal(map[string]any{"i": 300, "u": 1e30}, &got, "")
 
 		assert.ErrorContains(t, err, "i: overflow: cannot decode 300 into int8")
 		assert.ErrorContains(t, err, "u: overflow: cannot decode 1e+30 into uint")
@@ -257,11 +257,11 @@ func TestUnmarshalErrors(t *testing.T) {
 		t.Parallel()
 
 		var got testLeaves
-		err := codec.Unmarshal("", map[string]any{
+		err := codec.Unmarshal(map[string]any{
 			"subs":     []any{map[string]any{}, map[string]any{"v2": 1}},
 			"sub_map":  map[string]any{"k": map[string]any{"type": true}},
 			"sub_ptrs": []any{"x"},
-		}, &got)
+		}, &got, "")
 
 		assert.ErrorContains(t, err, "subs[1].v2: type mismatch: cannot decode int into string")
 		assert.ErrorContains(t, err, "sub_map[k].type: type mismatch: cannot decode bool into string")
@@ -272,11 +272,11 @@ func TestUnmarshalErrors(t *testing.T) {
 		t.Parallel()
 
 		var got testMapKeys
-		err := codec.Unmarshal("", map[string]any{
+		err := codec.Unmarshal(map[string]any{
 			"ints":  map[string]any{"x": "a", "1": "b"},
 			"uints": map[string]any{"300": "c"},
 			"texts": map[string]any{"nocolon": 1},
-		}, &got)
+		}, &got, "")
 
 		assert.ErrorContains(t, err, `ints[x]: type mismatch: cannot decode key "x" into int`)
 		assert.ErrorContains(t, err, `uints[300]: overflow: cannot decode key "300" into uint8`)
@@ -288,7 +288,7 @@ func TestUnmarshalErrors(t *testing.T) {
 		t.Parallel()
 
 		var got testData
-		err := codec.Unmarshal("", map[string]any{"created_at": "yesterday"}, &got)
+		err := codec.Unmarshal(map[string]any{"created_at": "yesterday"}, &got, "")
 
 		assert.ErrorContains(t, err, "created_at: parsing time")
 	})
@@ -310,7 +310,7 @@ func TestUnmarshalUnmarshaler(t *testing.T) {
 		t.Parallel()
 
 		var got testMarshalers
-		require.NoError(t, codec.Unmarshal("", marshal(t, "", input), &got))
+		require.NoError(t, codec.Unmarshal(marshal(t, "", input), &got, ""))
 		assert.Equal(t, input, got)
 	})
 
@@ -324,7 +324,7 @@ func TestUnmarshalUnmarshaler(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, &d))
 
 		var got testMarshalers
-		require.NoError(t, codec.Unmarshal("", d, &got))
+		require.NoError(t, codec.Unmarshal(d, &got, ""))
 		assert.Equal(t, input, got)
 	})
 
@@ -332,7 +332,7 @@ func TestUnmarshalUnmarshaler(t *testing.T) {
 		t.Parallel()
 
 		var got testMarshalers
-		err := codec.Unmarshal("", map[string]any{"price": 5, "prices": []any{"0.01", true}}, &got)
+		err := codec.Unmarshal(map[string]any{"price": 5, "prices": []any{"0.01", true}}, &got, "")
 
 		assert.ErrorContains(t, err, "price: money: unexpected int")
 		assert.ErrorContains(t, err, "prices[1]: money: unexpected bool")
@@ -342,12 +342,12 @@ func TestUnmarshalUnmarshaler(t *testing.T) {
 		t.Parallel()
 
 		var got testExtended
-		require.NoError(t, codec.Unmarshal("schema2", map[string]any{
+		require.NoError(t, codec.Unmarshal(map[string]any{
 			"type": "a", "v2": "b", "extended": true,
-		}, &got))
+		}, &got, "schema2"))
 		assert.Equal(t, testExtended{Type: "a"}, got)
 
-		assert.EqualError(t, codec.Unmarshal("", map[string]any{}, &got), "extended: missing marker")
+		assert.EqualError(t, codec.Unmarshal(map[string]any{}, &got, ""), "extended: missing marker")
 	})
 }
 
@@ -355,8 +355,8 @@ func TestUnmarshalPanics(t *testing.T) {
 	t.Parallel()
 
 	assert.PanicsWithValue(t, "structmap: Unmarshal expects a non-nil pointer, got structmap_test.testData",
-		func() { _ = codec.Unmarshal("", nil, testData{}) })
-	assert.Panics(t, func() { _ = codec.Unmarshal("", nil, (*testData)(nil)) })
+		func() { _ = codec.Unmarshal(nil, testData{}, "") })
+	assert.Panics(t, func() { _ = codec.Unmarshal(nil, (*testData)(nil), "") })
 	assert.PanicsWithValue(t, "structmap: Unmarshal expects a pointer to struct, got *int",
-		func() { _ = codec.Unmarshal("", nil, new(int)) })
+		func() { _ = codec.Unmarshal(nil, new(int), "") })
 }

@@ -184,7 +184,7 @@ type testExtended testSub1
 func (e testExtended) MarshalMap(s structmap.Scope) (any, error) {
 	type plain testExtended
 
-	m, err := s.Codec().Marshal(s.Schema, plain(e))
+	m, err := s.Codec().Marshal(plain(e), s.Schema)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +202,7 @@ func (e *testExtended) UnmarshalMap(s structmap.Scope, v any) error {
 		return errors.New("extended: missing marker")
 	}
 
-	return s.Codec().Unmarshal(s.Schema, m, (*plain)(e))
+	return s.Codec().Unmarshal(m, (*plain)(e), s.Schema)
 }
 
 // testFailing fails to marshal when Bad is set.
@@ -237,7 +237,7 @@ type testNode struct {
 func marshal(t *testing.T, schema string, v any) map[string]any {
 	t.Helper()
 
-	m, err := codec.Marshal(schema, v)
+	m, err := codec.Marshal(v, schema)
 	require.NoError(t, err)
 
 	return m

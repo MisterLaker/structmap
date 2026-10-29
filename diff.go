@@ -7,7 +7,7 @@ import (
 )
 
 // Diff is Diff with c.Tag.
-func (c Codec) Diff[T any](schema string, a, b T) (map[string]any, error) {
+func (c Codec) Diff[T any](a, b T, schema string) (map[string]any, error) {
 	d := diffState{enc: encodeState{scope: c.scope(schema), cache: cacheFor(c.Tag)}}
 
 	return d.diff(root(reflect.ValueOf(&a).Elem()), root(reflect.ValueOf(&b).Elem()))

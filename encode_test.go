@@ -305,7 +305,7 @@ func TestMarshalMarshaler(t *testing.T) {
 	t.Run("top level non-map", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := codec.Marshal("", testMoney(1))
+		_, err := codec.Marshal(testMoney(1), "")
 
 		require.ErrorIs(t, err, structmap.ErrType)
 		assert.EqualError(t, err,
@@ -323,9 +323,9 @@ func TestMarshalErrors(t *testing.T) {
 			Items map[string][]testFailing `tag:"items"`
 		}
 
-		_, err := codec.Marshal("", failing{
+		_, err := codec.Marshal(failing{
 			Items: map[string][]testFailing{"k": {{}, {Bad: true}}},
-		})
+		}, "")
 
 		var fe *structmap.FieldError
 		require.ErrorAs(t, err, &fe)
@@ -339,7 +339,7 @@ func TestMarshalErrors(t *testing.T) {
 		node := &testNode{Name: "a"}
 		node.Next = &testNode{Name: "b", Next: node}
 
-		_, err := codec.Marshal("", node)
+		_, err := codec.Marshal(node, "")
 
 		require.ErrorIs(t, err, structmap.ErrCycle)
 	})
@@ -352,7 +352,7 @@ func TestMarshalErrors(t *testing.T) {
 			head = &testNode{Name: "n", Next: head}
 		}
 
-		_, err := codec.Marshal("", head)
+		_, err := codec.Marshal(head, "")
 
 		require.NoError(t, err)
 	})
@@ -364,13 +364,13 @@ func TestMarshalPanics(t *testing.T) {
 	t.Run("non-struct input", func(t *testing.T) {
 		t.Parallel()
 
-		assert.Panics(t, func() { _, _ = codec.Marshal("", 42) })
+		assert.Panics(t, func() { _, _ = codec.Marshal(42, "") })
 	})
 
 	t.Run("empty tag", func(t *testing.T) {
 		t.Parallel()
 
-		assert.PanicsWithValue(t, "structmap: empty tag", func() { _, _ = structmap.Codec{}.Marshal("", testData{}) })
+		assert.PanicsWithValue(t, "structmap: empty tag", func() { _, _ = structmap.Codec{}.Marshal(testData{}, "") })
 	})
 
 	t.Run("option typo", func(t *testing.T) {
@@ -382,7 +382,7 @@ func TestMarshalPanics(t *testing.T) {
 
 		assert.PanicsWithValue(t,
 			`structmap: unknown option "omitezero" in structmap_test.typo.CreatedAt tag "tag"`,
-			func() { _, _ = codec.Marshal("", typo{}) },
+			func() { _, _ = codec.Marshal(typo{}, "") },
 		)
 	})
 
@@ -393,7 +393,7 @@ func TestMarshalPanics(t *testing.T) {
 			Sub testSub1 `tag:",sqash"`
 		}
 
-		assert.Panics(t, func() { _, _ = codec.Marshal("", typo{}) })
+		assert.Panics(t, func() { _, _ = codec.Marshal(typo{}, "") })
 	})
 
 	t.Run("squash on non-struct", func(t *testing.T) {
@@ -405,7 +405,7 @@ func TestMarshalPanics(t *testing.T) {
 
 		assert.PanicsWithValue(t,
 			"structmap: squash on non-struct field structmap_test.badSquash.Name",
-			func() { _, _ = codec.Marshal("", badSquash{}) },
+			func() { _, _ = codec.Marshal(badSquash{}, "") },
 		)
 	})
 
@@ -418,7 +418,7 @@ func TestMarshalPanics(t *testing.T) {
 
 		assert.PanicsWithValue(t,
 			"structmap: overwrite without squash on structmap_test.bad.Name",
-			func() { _, _ = codec.Marshal("", bad{}) },
+			func() { _, _ = codec.Marshal(bad{}, "") },
 		)
 	})
 }
@@ -431,15 +431,15 @@ func TestDefaultCodec(t *testing.T) {
 		Qty int    `structmap:"qty,omitempty" tag:"qty"`
 	}
 
-	got, err := structmap.Marshal("", item{SKU: "a1"})
+	got, err := structmap.Marshal(item{SKU: "a1"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"sku": "a1"}, got)
 
 	var decoded item
-	require.NoError(t, structmap.Unmarshal("", map[string]any{"sku": "b2", "id": "x", "qty": 5}, &decoded))
+	require.NoError(t, structmap.Unmarshal(map[string]any{"sku": "b2", "id": "x", "qty": 5}, &decoded, ""))
 	assert.Equal(t, item{SKU: "b2", Qty: 5}, decoded)
 
-	assert.PanicsWithValue(t, "structmap: empty tag", func() { _ = structmap.Codec{}.Unmarshal("", nil, &decoded) })
+	assert.PanicsWithValue(t, "structmap: empty tag", func() { _ = structmap.Codec{}.Unmarshal(nil, &decoded, "") })
 }
 
 // testList is a recursive non-struct type, it must not loop while its type info is computed.
