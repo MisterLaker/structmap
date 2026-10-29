@@ -12,6 +12,9 @@ import (
 	"github.com/MisterLaker/structmap"
 )
 
+// codec converts the fixtures, which use the "tag" key.
+var codec = structmap.Codec{Tag: "tag"}
+
 type testSub1 struct {
 	Type string `tag:"type,schema1,schema2,omitempty"`
 	V1   string `tag:"v1,schema1,schema2,omitempty"`
@@ -181,7 +184,7 @@ type testExtended testSub1
 func (e testExtended) MarshalMap(s structmap.Scope) (any, error) {
 	type plain testExtended
 
-	m, err := structmap.Marshal(s.Tag, s.Schema, plain(e))
+	m, err := s.Codec().Marshal(s.Schema, plain(e))
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +202,7 @@ func (e *testExtended) UnmarshalMap(s structmap.Scope, v any) error {
 		return errors.New("extended: missing marker")
 	}
 
-	return structmap.Unmarshal(s.Tag, s.Schema, m, (*plain)(e))
+	return s.Codec().Unmarshal(s.Schema, m, (*plain)(e))
 }
 
 // testFailing fails to marshal when Bad is set.
@@ -234,7 +237,7 @@ type testNode struct {
 func marshal(t *testing.T, schema string, v any) map[string]any {
 	t.Helper()
 
-	m, err := structmap.Marshal("tag", schema, v)
+	m, err := codec.Marshal(schema, v)
 	require.NoError(t, err)
 
 	return m

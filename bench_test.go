@@ -57,7 +57,7 @@ func BenchmarkMarshal(b *testing.B) {
 		b.ReportAllocs()
 
 		for b.Loop() {
-			_, _ = structmap.Marshal("map", "full", flat)
+			_, _ = structmap.Marshal("full", flat)
 		}
 	})
 
@@ -65,21 +65,21 @@ func BenchmarkMarshal(b *testing.B) {
 		b.ReportAllocs()
 
 		for b.Loop() {
-			_, _ = structmap.Marshal("map", "full", nested)
+			_, _ = structmap.Marshal("full", nested)
 		}
 	})
 }
 
 func BenchmarkUnmarshal(b *testing.B) {
-	flat, _ := structmap.Marshal("map", "full", newBenchNested().Flat)
-	nested, _ := structmap.Marshal("map", "full", newBenchNested())
+	flat, _ := structmap.Marshal("full", newBenchNested().Flat)
+	nested, _ := structmap.Marshal("full", newBenchNested())
 
 	b.Run("flat", func(b *testing.B) {
 		b.ReportAllocs()
 
 		for b.Loop() {
 			var out benchFlat
-			_ = structmap.Unmarshal("map", "full", flat, &out)
+			_ = structmap.Unmarshal("full", flat, &out)
 		}
 	})
 
@@ -88,7 +88,35 @@ func BenchmarkUnmarshal(b *testing.B) {
 
 		for b.Loop() {
 			var out benchNested
-			_ = structmap.Unmarshal("map", "full", nested, &out)
+			_ = structmap.Unmarshal("full", nested, &out)
+		}
+	})
+}
+
+func BenchmarkDiff(b *testing.B) {
+	nestedA := newBenchNested()
+	flatA := nestedA.Flat
+
+	flatB := flatA
+	flatB.Title = "changed"
+
+	nestedB := nestedA
+	nestedB.Meta = &benchMeta{Author: "a", Version: 3}
+	nestedB.Labels = map[string]string{"k": "w"}
+
+	b.Run("flat", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for b.Loop() {
+			_, _ = structmap.Diff("full", flatA, flatB)
+		}
+	})
+
+	b.Run("nested", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for b.Loop() {
+			_, _ = structmap.Diff("full", nestedA, nestedB)
 		}
 	})
 }

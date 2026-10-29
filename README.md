@@ -9,7 +9,7 @@ a public one for an API, selected by the schema name at call time.
 go get github.com/MisterLaker/structmap
 ```
 
-Requires Go 1.26 or newer.
+Requires Go 1.27 or newer.
 
 ## Quick start
 
@@ -28,17 +28,17 @@ type User struct {
 
 user := User{ID: "42", Email: "a@example.com", Address: Address{City: "Kyiv", Zip: "01001"}}
 
-public, err := structmap.Marshal("map", "public", user)
+public, err := structmap.Marshal("public", user)
 // map[address:map[city:Kyiv] id:42]
 
-full, err := structmap.Marshal("map", "", user)
+full, err := structmap.Marshal("", user)
 // map[address:map[city:Kyiv zip:01001] email:a@example.com id:42]
 
 var decoded User
-err = structmap.Unmarshal("map", "", full, &decoded)
+err = structmap.Unmarshal("", full, &decoded)
 ```
 
-With a fixed tag:
+The package-level functions use the `map` tag (`structmap.DefaultTag`). For another tag, use a `Codec`:
 
 ```go
 var db = structmap.Codec{Tag: "db"}
@@ -106,6 +106,40 @@ When decoding, a key shared by the parent and a squashed struct is set on both.
 
 Unmarshal accepts its own Marshal output as well as `encoding/json` output (`float64` numbers, `[]any`, RFC 3339 strings).
 
+## Diff
+
+`Diff` returns a patch from `a` to `b`: unmarshaling it into `a` gives a value that marshals as `b`.
+
+```go
+type Address struct {
+	City string `map:"city"`
+	Zip  string `map:"zip"`
+}
+
+type User struct {
+	ID      string   `map:"id"`
+	Name    string   `map:"name,omitempty"`
+	Tags    []string `map:"tags"`
+	Address Address  `map:"address"`
+}
+
+before := User{ID: "42", Name: "Ann", Tags: []string{"a"}, Address: Address{City: "Kyiv", Zip: "01001"}}
+after := User{ID: "42", Tags: []string{"a", "b"}, Address: Address{City: "Lviv", Zip: "01001"}}
+
+patch, err := structmap.Diff("", before, after)
+// map[address:map[city:Lviv] name:<nil> tags:[a b]]
+
+err = structmap.Unmarshal("", patch, &before) // before now marshals as after
+```
+
+- Only keys that differ are kept. Keys `b` drops (`omitempty`, `omitzero`) are `nil`, which resets the field.
+- Nested structs present on both sides are diffed key by key, as `Unmarshal` merges into them.
+- Slices, arrays, maps, `Marshaler` and `Unmarshaler` values are replaced whole.
+  A squashed `Marshaler` or `Unmarshaler` gets all of its keys when one differs.
+- Values are compared with their `Equal(T) bool` method when defined (`time.Time` of the same instant
+  in another location is equal), with `reflect.DeepEqual` otherwise.
+- The result is `nil` when nothing differs. `Codec.Diff` does the same with the codec's tag.
+
 ## Custom types
 
 ```go
@@ -123,13 +157,14 @@ func (m *Money) UnmarshalMap(s structmap.Scope, v any) error {
 `Scope` carries the tag and schema, so a type can produce schema dependent output.
 A squashed `Marshaler` should return `map[string]any`, a squashed `Unmarshaler` gets the whole parent map.
 
-To extend the default conversion instead of replacing it, convert a defined copy without methods:
+To extend the default conversion instead of replacing it, convert a defined copy without methods
+with `s.Codec()`, so the caller's tag is kept:
 
 ```go
 func (d Doc) MarshalMap(s structmap.Scope) (any, error) {
 	type plain Doc
 
-	m, err := structmap.Marshal(s.Tag, s.Schema, plain(d))
+	m, err := s.Codec().Marshal(s.Schema, plain(d))
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +181,7 @@ Invalid arguments and invalid tags are programming errors and panic.
 Data errors are returned as `*structmap.FieldError` with the path of the field:
 
 ```go
-err := structmap.Unmarshal("map", "", map[string]any{"qty": 300}, &item)
+err := structmap.Unmarshal("", map[string]any{"qty": 300}, &item)
 // qty: overflow: cannot decode 300 into uint8
 
 var fe *structmap.FieldError
@@ -154,7 +189,7 @@ errors.As(err, &fe)                  // fe.Path == "qty"
 errors.Is(err, structmap.ErrOverflow) // true
 ```
 
-`Marshal` stops at the first error. `Unmarshal` decodes as much as possible and joins every error,
+`Marshal` and `Diff` stop at the first error. `Unmarshal` decodes as much as possible and joins every error,
 fields that decoded fine stay set.
 
 Sentinels: `ErrType`, `ErrOverflow`, `ErrFraction`, `ErrNegative`, `ErrLength`, `ErrCycle`.

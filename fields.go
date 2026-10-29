@@ -51,6 +51,7 @@ type typeInfo struct {
 	unmarshaler     bool // *T implements Unmarshaler
 	textUnmarshaler bool // *T implements encoding.TextUnmarshaler
 	needsEncoding   bool // Marshal converts values of T, see needsEncoding
+	equal           int  // index of the Equal(T) bool method of T, -1 if none, for Diff
 }
 
 // tagCache holds the type infos of one tag, it is resolved once per call
@@ -83,7 +84,7 @@ func (c *tagCache) info(t reflect.Type) *typeInfo {
 }
 
 func (c *tagCache) newInfo(t reflect.Type) *typeInfo {
-	info := &typeInfo{marshaler: t.Implements(marshalerType)}
+	info := &typeInfo{marshaler: t.Implements(marshalerType), equal: equalMethod(t)}
 
 	if t.Kind() != reflect.Pointer {
 		pt := reflect.PointerTo(t)
@@ -101,6 +102,20 @@ func (c *tagCache) newInfo(t reflect.Type) *typeInfo {
 	}
 
 	return info
+}
+
+// equalMethod returns the index of the Equal(T) bool method of t, such as time.Time's, or -1.
+func equalMethod(t reflect.Type) int {
+	if t.Kind() == reflect.Interface {
+		return -1
+	}
+
+	m, ok := t.MethodByName("Equal")
+	if !ok || m.Type.NumIn() != 2 || m.Type.In(1) != t || m.Type.NumOut() != 1 || m.Type.Out(0).Kind() != reflect.Bool {
+		return -1
+	}
+
+	return m.Index
 }
 
 // needsEncoding reports whether values of t contain Marshalers, structs with tagged fields

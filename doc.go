@@ -5,7 +5,7 @@
 //
 // # Tags
 //
-// The tag key is chosen by the caller (Marshal, Unmarshal or Codec.Tag). Its value is
+// Marshal, Unmarshal and Diff use the tag key "map" (DefaultTag), a Codec uses its own. Its value is
 //
 //	`<tag>:"name,item,..."`
 //
@@ -44,15 +44,29 @@
 // converted between numeric kinds when lossless, or converted to same-kind named types
 // (string to a named string type). Nested maps decode into structs and maps, slices into slices and arrays.
 //
+// # Diff
+//
+// Diff returns the patch from a to b: Unmarshal of the patch into a gives a value that marshals as b.
+// The patch holds the keys of b's Marshal output that differ from a's, and nil for the keys only a has
+// (removed by omitempty or omitzero), so Unmarshal resets them. It is nil when nothing differs.
+//
+// Nested structs present on both sides are diffed key by key, as Unmarshal merges into them.
+// Everything else is replaced whole: slices, arrays, maps (Unmarshal rebuilds them), Marshalers
+// and Unmarshalers. A squashed Marshaler or Unmarshaler gets all of its keys when one differs,
+// as it decodes from the parent map.
+//
+// Values are compared by their Equal(T) bool method when defined, so time.Time values of the same
+// instant are equal in any location, and by reflect.DeepEqual otherwise.
+//
 // # Custom types
 //
 // Types implementing Marshaler or Unmarshaler encode and decode themselves, including the value
-// passed to Marshal or Unmarshal. To extend the default behaviour, call Marshal or Unmarshal on
-// a defined type without methods (type plain T), calling it on T itself recurses forever.
+// passed to Marshal or Unmarshal. To extend the default behaviour, convert a defined type without
+// methods (type plain T) with Scope.Codec, so the caller's tag is kept. Converting T itself recurses forever.
 //
 // # Errors
 //
 // Invalid arguments and invalid tags are programming errors and panic. Data errors are returned:
-// Marshal stops at the first one, Unmarshal decodes as much as possible and joins every error.
+// Marshal and Diff stop at the first one, Unmarshal decodes as much as possible and joins every error.
 // Errors are reported as *FieldError with the field path and wrap sentinels such as ErrType and ErrOverflow.
 package structmap

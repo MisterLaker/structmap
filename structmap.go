@@ -6,6 +6,12 @@ type Scope struct {
 	Schema string // selected schema, empty selects every field
 }
 
+// Codec returns a Codec with the scope's tag, for Marshalers and Unmarshalers
+// that extend the default conversion, see the package documentation.
+func (s Scope) Codec() Codec {
+	return Codec{Tag: s.Tag}
+}
+
 // Marshaler is implemented by types that convert themselves for Marshal.
 // The returned value is used as is, a squashed Marshaler should return map[string]any.
 type Marshaler interface {
@@ -23,16 +29,27 @@ type Codec struct {
 	Tag string
 }
 
+// DefaultTag is the struct tag key of Marshal, Unmarshal and Diff.
+const DefaultTag = "map"
+
+var defaultCodec = Codec{Tag: DefaultTag}
+
 // Marshal converts the struct v (or a pointer to one) into a map, see the package documentation.
 // It returns nil for a nil v and panics when v is not a struct.
-func Marshal(tag, schema string, v any) (map[string]any, error) {
-	return Codec{Tag: tag}.Marshal(schema, v)
+func Marshal(schema string, v any) (map[string]any, error) {
+	return defaultCodec.Marshal(schema, v)
 }
 
 // Unmarshal decodes m into out, a non-nil pointer to a struct, see the package documentation.
 // It panics when out is not a non-nil pointer to a struct or Unmarshaler.
-func Unmarshal(tag, schema string, m map[string]any, out any) error {
-	return Codec{Tag: tag}.Unmarshal(schema, m, out)
+func Unmarshal(schema string, m map[string]any, out any) error {
+	return defaultCodec.Unmarshal(schema, m, out)
+}
+
+// Diff returns the patch from a to b, see the package documentation.
+// It panics when T is not a struct or a pointer to one.
+func Diff[T any](schema string, a, b T) (map[string]any, error) {
+	return defaultCodec.Diff(schema, a, b)
 }
 
 // Marshal is Marshal with c.Tag.
