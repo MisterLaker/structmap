@@ -3,6 +3,7 @@ package structmap
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"testing"
@@ -534,6 +535,179 @@ func TestDiff(t *testing.T) {
 	})
 }
 
+// shallowCodec is diffCodec with Shallow.
+var shallowCodec = Codec{Tag: "tag", Shallow: true}
+
+func TestDiffShallow(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	data := func() diffData {
+		return diffData{
+			ID:        "1",
+			V1:        "a",
+			V2:        "b",
+			Sub1:      &diffSub1{Type: "x", V1: "w", V2: "y"},
+			Sub2:      diffSub2{Kind: "k", Up: true},
+			CreatedAt: ts,
+		}
+	}
+
+	tests := []struct {
+		name   string
+		schema string
+		change func(*diffData)
+		want   map[string]any
+	}{
+		{
+			name:   "equal",
+			change: func(*diffData) {},
+			want:   nil,
+		},
+		{
+			name:   "scalar",
+			change: func(d *diffData) { d.ID = "2" },
+			want:   map[string]any{"id": "2"},
+		},
+		{
+			name:   "nested whole",
+			change: func(d *diffData) { d.Sub1.V2 = "z" },
+			want:   map[string]any{"sub": map[string]any{"type": "x", "v1": "w", "v2": "z"}},
+		},
+		{
+			name:   "nested key omitted",
+			change: func(d *diffData) { d.Sub1.V1 = "" },
+			want:   map[string]any{"sub": map[string]any{"type": "x", "v2": "y"}},
+		},
+		{
+			name:   "nested outside schema",
+			schema: "schema2",
+			change: func(d *diffData) { d.Sub1.V2 = "z" },
+			want:   nil,
+		},
+		{
+			name:   "nested in schema",
+			schema: "schema1",
+			change: func(d *diffData) { d.Sub1.Type = "q" },
+			want:   map[string]any{"sub": map[string]any{"type": "q", "v1": "w", "v2": "y"}},
+		},
+		{
+			name:   "nested removed",
+			change: func(d *diffData) { d.Sub1 = nil },
+			want:   map[string]any{"sub": nil},
+		},
+		{
+			name:   "squash",
+			change: func(d *diffData) { d.Sub2.Kind = "q" },
+			want:   map[string]any{"kind": "q"},
+		},
+		{
+			name:   "squash removed",
+			change: func(d *diffData) { d.Sub2.Up = false },
+			want:   map[string]any{"Up": nil},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			a, b := data(), data()
+			tt.change(&b)
+
+			got, err := shallowCodec.Diff(a, b, tt.schema)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+
+			for _, schema := range []string{"", "schema1", "schema2", "other"} {
+				assertReplacePatch(t, schema, data(), b)
+			}
+		})
+	}
+
+	t.Run("nested added", func(t *testing.T) {
+		t.Parallel()
+
+		b := diffData{Sub1: &diffSub1{V2: "y"}}
+
+		got, err := shallowCodec.Diff(diffData{}, b, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"sub": map[string]any{"v2": "y"}}, got)
+
+		assertReplacePatch(t, "", diffData{}, b)
+	})
+
+	t.Run("nested values", func(t *testing.T) {
+		t.Parallel()
+
+		type nested struct {
+			Sub diffSub1 `tag:"sub"`
+		}
+
+		a, b := nested{Sub: diffSub1{Type: "x", V2: "y"}}, nested{Sub: diffSub1{Type: "x", V2: "z"}}
+
+		got, err := shallowCodec.Diff(a, b, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"sub": map[string]any{"type": "x", "v2": "z"}}, got)
+
+		got, err = shallowCodec.Diff(a, a, "")
+		require.NoError(t, err)
+		assert.Nil(t, got)
+	})
+
+	t.Run("roots still diffed", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := shallowCodec.Diff(&diffSub1{V2: "a"}, &diffSub1{V2: "b"}, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"v2": "b"}, got)
+	})
+
+	t.Run("squash collision", func(t *testing.T) {
+		t.Parallel()
+
+		a := diffCollision{Type: "p", V2: "p", Sub: diffSub1{Type: "s", V1: "s", V2: "s"}}
+		b := a
+		b.Sub.V1 = "t"
+
+		got, err := shallowCodec.Diff(a, b, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"v1": "t"}, got)
+
+		assertReplacePatch(t, "", a, b)
+	})
+}
+
+// assertReplacePatch checks that replacing a's top-level keys with the Shallow diff from a to b,
+// as a store that replaces top-level values applies it, gives what b marshals to.
+// nil values are dropped from both sides: a store either keeps them as null or removes the key.
+func assertReplacePatch[T any](t *testing.T, schema string, a, b T) {
+	t.Helper()
+
+	patch, err := shallowCodec.Diff(a, b, schema)
+	require.NoError(t, err)
+
+	got, err := shallowCodec.Marshal(a, schema)
+	require.NoError(t, err)
+
+	if got == nil {
+		got = make(map[string]any)
+	}
+
+	maps.Copy(got, patch)
+
+	want, err := shallowCodec.Marshal(b, schema)
+	require.NoError(t, err)
+
+	assert.Equal(t, dropNil(want), dropNil(got))
+}
+
+func dropNil(m map[string]any) map[string]any {
+	maps.DeleteFunc(m, func(_ string, v any) bool { return v == nil })
+
+	return m
+}
+
 // assertPatch checks that the diff from a to b, unmarshaled into a, gives a value that marshals as b.
 // a returns a new value each time, so the patch does not modify the pointers it shares with b.
 func assertPatch[T any](t *testing.T, schema string, a func() T, b T) {
@@ -686,7 +860,7 @@ func TestSame(t *testing.T) {
 					x, y = reflect.ValueOf(x.Interface()), reflect.ValueOf(y.Interface())
 				}
 
-				d := diffState{enc: encodeState{scope: diffCodec.scope(schema), cache: cacheFor(diffCodec.Tag)}}
+				d := diffState{enc: encodeState{scope: diffCodec.scope(schema), cache: diffCodec.cache()}}
 
 				msg := fmt.Sprintf("%s, schema %q, addressable %v", p.name, schema, addressable)
 
@@ -720,7 +894,7 @@ func TestSame(t *testing.T) {
 func TestSameErrors(t *testing.T) {
 	t.Parallel()
 
-	d := diffState{enc: encodeState{scope: diffCodec.scope(""), cache: cacheFor(diffCodec.Tag)}}
+	d := diffState{enc: encodeState{scope: diffCodec.scope(""), cache: diffCodec.cache()}}
 
 	x := map[string]map[sameKey]sameItem{"k": {{"bad"}: {}}}
 	y := map[string]map[sameKey]sameItem{"k": {{"bad"}: {}}}

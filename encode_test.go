@@ -1,6 +1,7 @@
 package structmap_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -494,4 +495,116 @@ func TestMarshalOmitZero(t *testing.T) {
 		"any":      1,
 		"plain":    2,
 	}, marshal(t, "", nonZero))
+}
+
+func TestMarshalStringOption(t *testing.T) {
+	t.Parallel()
+
+	// encoding/json's string option is not a schema name, so the field stays in every schema.
+	type quoted struct {
+		ID   int64  `tag:"id,string"`
+		Name string `tag:"name,string,public"`
+	}
+
+	got, err := codec.Marshal(quoted{ID: 1, Name: "a"}, "public")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"id": int64(1), "name": "a"}, got)
+
+	got, err = codec.Marshal(quoted{ID: 1, Name: "a"}, "other")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"id": int64(1)}, got)
+}
+
+// jsonMap is what encoding/json gives for v, decoded into a map.
+func jsonMap(t *testing.T, v any) map[string]any {
+	t.Helper()
+
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(b, &m))
+
+	return m
+}
+
+func TestMarshalInline(t *testing.T) {
+	t.Parallel()
+
+	t.Run("as encoding/json", func(t *testing.T) {
+		t.Parallel()
+
+		doc := newInlineDoc()
+
+		got, err := inlineCodec.Marshal(doc, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"lat": 50.45, "lon": 30.52, "note": "n", "id": "7", "city": "Kyiv"}, got)
+		assert.Equal(t, jsonMap(t, doc), got)
+
+		doc.InlineMeta = nil
+
+		got, err = inlineCodec.Marshal(doc, "")
+		require.NoError(t, err)
+		assert.Equal(t, jsonMap(t, doc), got)
+		assert.NotContains(t, got, "note")
+	})
+
+	t.Run("opt-in", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := structmap.Codec{Tag: "json"}.Marshal(newInlineDoc(), "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"city": "Kyiv", "InlineMeta": map[string]any{"note": "n"}}, got)
+	})
+
+	t.Run("named embedded nested", func(t *testing.T) {
+		t.Parallel()
+
+		type named struct {
+			InlinePoint `json:"point"`
+		}
+
+		got, err := inlineCodec.Marshal(named{InlinePoint{Lat: 1, Lon: 2}}, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"point": map[string]any{"lat": 1.0, "lon": 2.0}}, got)
+	})
+
+	t.Run("skipped", func(t *testing.T) {
+		t.Parallel()
+
+		// An unexported pointer Unmarshal could not allocate, and a type that is not a struct.
+		type skipped struct {
+			*inlineHidden
+			InlineText
+
+			City string `json:"city"`
+		}
+
+		got, err := inlineCodec.Marshal(skipped{inlineHidden: &inlineHidden{Hidden: "h"}, InlineText: "t", City: "Kyiv"}, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"city": "Kyiv"}, got)
+	})
+
+	t.Run("self embedding", func(t *testing.T) {
+		t.Parallel()
+
+		node := InlineNode{InlineNode: &InlineNode{Name: "b"}, Name: "a"}
+
+		got, err := inlineCodec.Marshal(node, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"name": "a"}, got)
+		assert.Equal(t, jsonMap(t, node), got)
+	})
+
+	t.Run("scope keeps inline", func(t *testing.T) {
+		t.Parallel()
+
+		type scoped struct {
+			Scoped InlineScoped `json:"scoped"`
+		}
+
+		got, err := inlineCodec.Marshal(scoped{Scoped: InlineScoped{InlinePoint{Lat: 1, Lon: 2}}}, "")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"scoped": map[string]any{"lat": 1.0, "lon": 2.0}}, got)
+	})
 }

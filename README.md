@@ -59,12 +59,39 @@ err = db.Unmarshal(m, &doc, "search")
 | `omitzero` | Skip when zero, using the type's `IsZero()` when defined (as `encoding/json`) |
 | `squash` | Merge the nested struct's keys into the parent instead of nesting them |
 | `overwrite` | With `squash`: the squashed keys replace the parent's |
+| `string` | Ignored: `encoding/json`'s option, so a codec on the `json` tag can read `json` tags |
 | anything else | A schema name |
 
 - A field without schema names is part of every schema, otherwise only of the listed ones.
 - The empty schema `""` selects every tagged field.
 - Untagged, unexported and `"-"` fields are skipped. An empty name falls back to the Go field name.
 - Misspelled options (`omitempy`, `sqash`, `overwite`) panic instead of silently becoming schema names.
+
+### Inline
+
+A `Codec` with `Inline` squashes embedded structs whose tag has no name, as `encoding/json` inlines them,
+so a codec on the `json` tag gives the keys `encoding/json` does:
+
+```go
+type Point struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
+type Place struct {
+	Point        // squashed: lat, lon
+	City  string `json:"city"`
+}
+
+m, err := structmap.Codec{Tag: "json", Inline: true}.Marshal(place, "")
+// map[city:Kyiv lat:50.45 lon:30.52], without Inline map[city:Kyiv]
+```
+
+- Untagged embedded structs and ones tagged with options only (`json:",omitempty"`) are squashed,
+  embedded structs of unexported types included.
+- Embedded types without keys to squash (`sync.Mutex`) are skipped, and so are pointers to unexported types,
+  which `Unmarshal` could not allocate.
+- Precedence is the squash rule: the parent's keys win. `encoding/json` drops names ambiguous at the same depth instead.
 
 ### Squash
 
@@ -137,8 +164,24 @@ err = structmap.Unmarshal(patch, &before, "") // before now marshals as after
 - Slices, arrays, maps, `Marshaler` and `Unmarshaler` values are replaced whole.
   A squashed `Marshaler` or `Unmarshaler` gets all of its keys when one differs.
 - Values are compared with their `Equal(T) bool` method when defined (`time.Time` of the same instant
-  in another location is equal), with `reflect.DeepEqual` otherwise.
+  in another location is equal), with `reflect.DeepEqual` otherwise. Slices of booleans, numbers and strings,
+  and string-keyed maps of them, are compared as `reflect.DeepEqual` does without reflecting on every item.
 - The result is `nil` when nothing differs. `Codec.Diff` does the same with the codec's tag.
+
+### Shallow
+
+Stores that replace top-level values instead of merging into them (a document update without object merging,
+`$set`, one column per key) need changed nested structs whole. A `Codec` with `Shallow` returns them so:
+
+```go
+shallow := structmap.Codec{Tag: structmap.DefaultTag, Shallow: true}
+
+patch, err := shallow.Diff(before, after, "")
+// map[address:map[city:Lviv zip:01001] name:<nil> tags:[a b]]
+```
+
+Replacing `a`'s top-level values with the patch's gives what `b` marshals to. `Unmarshal` merges into nested structs,
+so it does not apply such a patch exactly: a nested key `b` drops by `omitempty` or `omitzero` is not reset.
 
 ## Custom types
 
@@ -198,16 +241,19 @@ Sentinels: `ErrType`, `ErrOverflow`, `ErrFraction`, `ErrNegative`, `ErrLength`, 
 
 | Benchmark | Time | Memory | Allocations |
 |---|---|---|---|
-| Marshal, flat | 398 ns | 464 B | 4 |
-| Marshal, nested | 4.6 µs | 5488 B | 74 |
-| Unmarshal, flat | 259 ns | 128 B | 2 |
-| Unmarshal, nested | 2.5 µs | 976 B | 7 |
-| Diff, flat | 543 ns | 224 B | 3 |
-| Diff, nested | 6.9 µs | 3976 B | 23 |
+| Marshal, flat | 387 ns | 464 B | 4 |
+| Marshal, nested | 4.5 µs | 5488 B | 74 |
+| Unmarshal, flat | 291 ns | 128 B | 2 |
+| Unmarshal, nested | 2.6 µs | 976 B | 7 |
+| Diff, flat | 508 ns | 224 B | 3 |
+| Diff, nested | 5.0 µs | 3928 B | 20 |
+| Diff, nested shallow | 5.0 µs | 3944 B | 21 |
+| Diff, leaves | 2.7 µs | 544 B | 6 |
 
 - **flat**: a struct of 6 fields (strings, `int64`, `bool`, `time.Time`).
 - **nested**: the flat struct squashed, plus a pointer to a struct, a slice of 10 structs and a map.
-- **Diff** compares two independent values that differ in one field (flat) or two nested keys (nested).
+- **leaves**: two 1024-item `[]float32` slices and a 64-entry `map[string]uint32`.
+- **Diff** compares two independent values that differ in one field (flat, leaves) or two nested keys (nested).
 
 Go 1.27, Apple M2 (linux/arm64 container), medians of 3 runs. Reproduce with `make bench`, see [bench_test.go](bench_test.go).
 

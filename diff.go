@@ -8,14 +8,15 @@ import (
 
 // Diff is Diff with c.Tag.
 func (c Codec) Diff[T any](a, b T, schema string) (map[string]any, error) {
-	d := diffState{enc: encodeState{scope: c.scope(schema), cache: cacheFor(c.Tag)}}
+	d := diffState{enc: encodeState{scope: c.scope(schema), cache: c.cache()}, shallow: c.Shallow}
 
 	return d.diff(root(reflect.ValueOf(&a).Elem()), root(reflect.ValueOf(&b).Elem()))
 }
 
 // diffState walks two values of the same type, its encodeState marshals the values that differ.
 type diffState struct {
-	enc encodeState
+	enc     encodeState
+	shallow bool // Codec.Shallow: nested structs are compared and returned whole
 }
 
 // diffEntry is a key of a struct's Marshal output with the value it comes from.
@@ -213,7 +214,8 @@ func (d *diffState) entryDiff(k string, x, y diffEntry) (changed bool, out any, 
 	d.enc.path = append(d.enc.path, segment{kind: segmentField, name: k})
 	defer func() { d.enc.path = d.enc.path[:len(d.enc.path)-1] }()
 
-	if x.field != nil && x.field == y.field {
+	// Shallow compares nested structs whole below, valueDiff then marshals all of b's keys.
+	if !d.shallow && x.field != nil && x.field == y.field {
 		sa, okA := d.mergeable(x.v)
 		sb, okB := d.mergeable(y.v)
 
@@ -507,6 +509,10 @@ func (d *diffState) leafSame(x, y reflect.Value, info *typeInfo) bool {
 	default:
 	}
 
+	if info.fastEqual != nil {
+		return info.fastEqual(x, y)
+	}
+
 	// Pointers to the values box without allocating and compare the same.
 	if x.CanAddr() && y.CanAddr() {
 		return reflect.DeepEqual(x.Addr().Interface(), y.Addr().Interface())
@@ -663,8 +669,14 @@ func (d *diffState) equal(x, y any) bool {
 		return false
 	}
 
-	if i := d.enc.cache.info(vx.Type()).equal; i >= 0 {
-		return vx.Method(i).Call([]reflect.Value{vy})[0].Bool()
+	info := d.enc.cache.info(vx.Type())
+
+	if info.equal >= 0 {
+		return vx.Method(info.equal).Call([]reflect.Value{vy})[0].Bool()
+	}
+
+	if info.fastEqual != nil {
+		return info.fastEqual(vx, vy)
 	}
 
 	return reflect.DeepEqual(x, y)

@@ -242,3 +242,66 @@ func marshal(t *testing.T, schema string, v any) map[string]any {
 
 	return m
 }
+
+// inlineCodec squashes embedded structs as encoding/json inlines them, so the fixtures use the json tag.
+var inlineCodec = structmap.Codec{Tag: "json", Inline: true}
+
+type InlinePoint struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
+type InlineMeta struct {
+	Note string `json:"note,omitempty"`
+}
+
+type inlineBase struct {
+	ID string `json:"id"`
+}
+
+// InlineNoKeys has nothing to squash, as sync.Mutex.
+type InlineNoKeys struct {
+	n int //nolint:unused // verifies types without keys are skipped
+}
+
+type inlineHidden struct {
+	Hidden string `json:"hidden"`
+}
+
+type InlineText string
+
+// InlineNode embeds itself.
+type InlineNode struct {
+	*InlineNode
+
+	Name string `json:"name"`
+}
+
+// InlineScoped extends the default conversion through Scope.Codec, which keeps Inline.
+type InlineScoped struct {
+	InlinePoint
+}
+
+func (s InlineScoped) MarshalMap(scope structmap.Scope) (any, error) {
+	type plain InlineScoped
+
+	return scope.Codec().Marshal(plain(s), scope.Schema)
+}
+
+type inlineDoc struct {
+	InlinePoint
+	*InlineMeta `json:",omitempty"`
+	inlineBase
+	InlineNoKeys
+
+	City string `json:"city"`
+}
+
+func newInlineDoc() inlineDoc {
+	return inlineDoc{
+		InlinePoint: InlinePoint{Lat: 50.45, Lon: 30.52},
+		InlineMeta:  &InlineMeta{Note: "n"},
+		inlineBase:  inlineBase{ID: "7"},
+		City:        "Kyiv",
+	}
+}

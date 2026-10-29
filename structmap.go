@@ -4,12 +4,13 @@ package structmap
 type Scope struct {
 	Tag    string // struct tag key
 	Schema string // selected schema, empty selects every field
+	Inline bool   // Codec.Inline of the conversion
 }
 
-// Codec returns a Codec with the scope's tag, for Marshalers and Unmarshalers
+// Codec returns a Codec with the scope's tag and Inline, for Marshalers and Unmarshalers
 // that extend the default conversion, see the package documentation.
 func (s Scope) Codec() Codec {
-	return Codec{Tag: s.Tag}
+	return Codec{Tag: s.Tag, Inline: s.Inline}
 }
 
 // Marshaler is implemented by types that convert themselves for Marshal.
@@ -27,6 +28,14 @@ type Unmarshaler interface {
 // Codec converts with a fixed struct tag key.
 type Codec struct {
 	Tag string
+
+	// Inline squashes embedded structs whose tag has no name, untagged or with options only,
+	// as encoding/json inlines them, see the package documentation.
+	Inline bool
+
+	// Shallow makes Diff compare nested structs as a whole and return a changed one with all of its keys,
+	// for stores that replace top-level values instead of merging into them, see the package documentation.
+	Shallow bool
 }
 
 // DefaultTag is the struct tag key of Marshal, Unmarshal and Diff.
@@ -54,14 +63,14 @@ func Diff[T any](a, b T, schema string) (map[string]any, error) {
 
 // Marshal is Marshal with c.Tag.
 func (c Codec) Marshal(v any, schema string) (map[string]any, error) {
-	e := encodeState{scope: c.scope(schema), cache: cacheFor(c.Tag)}
+	e := encodeState{scope: c.scope(schema), cache: c.cache()}
 
 	return e.marshal(v)
 }
 
 // Unmarshal is Unmarshal with c.Tag.
 func (c Codec) Unmarshal(m map[string]any, out any, schema string) error {
-	d := decodeState{scope: c.scope(schema), cache: cacheFor(c.Tag)}
+	d := decodeState{scope: c.scope(schema), cache: c.cache()}
 
 	return d.unmarshal(m, out)
 }
@@ -71,5 +80,9 @@ func (c Codec) scope(schema string) Scope {
 		panic("structmap: empty tag")
 	}
 
-	return Scope{Tag: c.Tag, Schema: schema}
+	return Scope{Tag: c.Tag, Schema: schema, Inline: c.Inline}
+}
+
+func (c Codec) cache() *tagCache {
+	return cacheFor(c.Tag, c.Inline)
 }
