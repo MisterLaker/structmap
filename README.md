@@ -194,6 +194,62 @@ fields that decoded fine stay set.
 
 Sentinels: `ErrType`, `ErrOverflow`, `ErrFraction`, `ErrNegative`, `ErrLength`, `ErrCycle`.
 
+## Comparison
+
+### Struct ↔ map conversion
+
+| | structmap | [mapstructure] | [fatih/structs] | `encoding/json` round trip |
+|---|---|---|---|---|
+| Struct → map | ✓ | ✓ | ✓ | ✓ |
+| Map → struct | ✓ | ✓ | – | ✓ |
+| Named schemas (projections) | ✓ | – | – | – |
+| Keeps Go types (`time.Time`, `int64`, `[]byte`) | ✓ | scalars, but `time.Time` becomes an empty map | nested structs become maps unless `omitnested` | – (`float64`, strings, base64) |
+| Squash nested structs | `squash`, with `overwrite` precedence | `squash` | `flatten` | embedded structs only |
+| `omitempty` / `omitzero` | both | both | `omitempty` | both (`omitzero` since Go 1.24) |
+| Custom conversion per type | `Marshaler` / `Unmarshaler` with the schema | decode hooks | `string` option | `json.Marshaler` / `json.Unmarshaler` |
+| Diff to a patch | ✓ | – | – | – |
+| Maintained | ✓ | ✓ ([go-viper fork]) | archived, last change in 2018 | standard library |
+
+- **[mapstructure]** is the usual choice for decoding loosely typed input such as configuration:
+  weakly typed conversions (`"1"` into an `int`), decode hooks, `remain` for unknown keys and errors on unused keys.
+  The original `mitchellh/mapstructure` was archived in 2024, development continues in the [go-viper fork].
+  It has no notion of schemas, so each projection needs its own struct or post-processing.
+- **[fatih/structs]** only converts structs to maps and is no longer maintained.
+- **`encoding/json`** to `map[string]any` and back works without extra dependencies, but loses Go types:
+  numbers become `float64`, `time.Time` a string, `[]byte` base64. It also costs a full encode and decode.
+  structmap's `Unmarshal` accepts such maps, so the two can be mixed.
+
+Use structmap when one struct has to produce several maps (storage, search index, public API) and
+the values should keep their Go types.
+
+### Diff
+
+| | structmap `Diff` | [r3labs/diff] | [evanphx/json-patch] `CreateMergePatch` | [wI2L/jsondiff] | [go-cmp] |
+|---|---|---|---|---|---|
+| Input | Go values | Go values | JSON documents | JSON documents | Go values |
+| Output | partial `map[string]any` | changelog of changes with paths | [RFC 7396] merge patch | [RFC 6902] JSON Patch operations | human-readable text |
+| Applied with | `Unmarshal` | `diff.Patch` | `MergePatch` | a JSON Patch library | – (for tests) |
+| Removed values | `nil` | delete changes | `null` | `remove` operations | `-` lines |
+| Slices | replaced whole | per element, optionally by identifier | replaced whole | per element | per element |
+| Schemas | ✓ | – | – | – | – |
+
+`Diff` follows the semantics of an RFC 7396 merge patch, on Go values instead of JSON: nested objects
+are merged, `nil` removes (resets the field to its zero value), slices and maps are replaced whole. The patch is in the same shape as `Marshal`
+output, so it can be stored or sent as a partial update and applied back with `Unmarshal`.
+
+Pick [r3labs/diff] for an audit log of individual changes, the JSON libraries when both sides are
+already JSON, and [go-cmp] to compare values in tests.
+
+[mapstructure]: https://github.com/go-viper/mapstructure
+[go-viper fork]: https://github.com/go-viper/mapstructure
+[fatih/structs]: https://github.com/fatih/structs
+[r3labs/diff]: https://github.com/r3labs/diff
+[evanphx/json-patch]: https://github.com/evanphx/json-patch
+[wI2L/jsondiff]: https://github.com/wI2L/jsondiff
+[go-cmp]: https://github.com/google/go-cmp
+[RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396
+[RFC 6902]: https://www.rfc-editor.org/rfc/rfc6902
+
 ## Development
 
 ```bash
