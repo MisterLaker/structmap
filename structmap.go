@@ -43,6 +43,8 @@ const DefaultTag = "structmap"
 
 var defaultCodec = Codec{Tag: DefaultTag}
 
+var JSON = Codec{Tag: "json", Inline: true, Shallow: true}
+
 // Marshal converts the struct v (or a pointer to one) into a map, see the package documentation.
 // It returns nil for a nil v and panics when v is not a struct.
 func Marshal(v any, schema string) (map[string]any, error) {
