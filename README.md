@@ -5,6 +5,17 @@ Convert Go structs to `map[string]any` and back, driven by struct tags and **nam
 One struct, several projections: a full document for storage, a reduced one for a search index,
 a public one for an API, selected by the schema name at call time.
 
+## Features
+
+- **Named schemas**: one struct, several projections (storage, search index, public API), picked when you call it
+- **Marshal / Unmarshal** to and from `map[string]any`, including nested structs, slices, maps and `TextMarshaler` keys
+- **Diff** returns a patch from `a` to `b` that `Unmarshal` can apply. `Shallow` mode suits stores that replace top-level values
+- **Works with JSON tags**: `structmap.JSON` reads `json` tags and inlines embedded structs the way `encoding/json` does
+- **Tag options**: `omitempty`, `omitzero`, `squash`, `overwrite`. A misspelled option panics so it isn't treated as a schema name
+- **Lenient decoding**: lossless numeric conversion, `TextUnmarshaler`, named types. Missing keys leave fields untouched
+- **Custom types** through the `Marshaler` / `Unmarshaler` interfaces
+- **Clear errors**: `*FieldError` gives the field path and wraps `ErrType` and `ErrOverflow`. `Unmarshal` collects every error instead of stopping at the first
+
 ```bash
 go get github.com/MisterLaker/structmap
 ```
