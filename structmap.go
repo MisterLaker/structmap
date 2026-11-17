@@ -43,6 +43,8 @@ const DefaultTag = "structmap"
 
 var defaultCodec = Codec{Tag: DefaultTag}
 
+// JSON is a Codec for the json struct tag that inlines embedded structs as encoding/json does
+// and diffs nested structs shallowly, for stores of JSON documents.
 var JSON = Codec{Tag: "json", Inline: true, Shallow: true}
 
 // Marshal converts the struct v (or a pointer to one) into a map, see the package documentation.
