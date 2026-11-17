@@ -1,6 +1,7 @@
 package structmap_test
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -33,6 +34,32 @@ type benchNested struct {
 	Meta   *benchMeta        `structmap:"meta"`
 	Items  []benchItem       `structmap:"items"`
 	Labels map[string]string `structmap:"labels"`
+}
+
+// benchLeaves holds large leaves: two slices of numbers and a map of them.
+type benchLeaves struct {
+	ID      string            `structmap:"id"`
+	Weights []float32         `structmap:"weights"`
+	Scores  []float32         `structmap:"scores"`
+	Counts  map[string]uint32 `structmap:"counts"`
+}
+
+func newBenchLeaves() benchLeaves {
+	numbers := func() []float32 {
+		v := make([]float32, 1024)
+		for i := range v {
+			v[i] = float32(i) / 1024
+		}
+
+		return v
+	}
+
+	counts := make(map[string]uint32, 64)
+	for i := range 64 {
+		counts["key"+strconv.Itoa(i)] = uint32(i)
+	}
+
+	return benchLeaves{ID: "1", Weights: numbers(), Scores: numbers(), Counts: counts}
 }
 
 func newBenchNested() benchNested {
@@ -115,6 +142,27 @@ func BenchmarkDiff(b *testing.B) {
 
 		for b.Loop() {
 			_, _ = structmap.Diff(nestedA, nestedB, "full")
+		}
+	})
+
+	shallow := structmap.Codec{Tag: structmap.DefaultTag, Shallow: true}
+
+	b.Run("nested shallow", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for b.Loop() {
+			_, _ = shallow.Diff(nestedA, nestedB, "full")
+		}
+	})
+
+	leavesA, leavesB := newBenchLeaves(), newBenchLeaves()
+	leavesB.ID = "2"
+
+	b.Run("leaves", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for b.Loop() {
+			_, _ = structmap.Diff(leavesA, leavesB, "")
 		}
 	})
 }

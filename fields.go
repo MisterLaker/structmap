@@ -58,23 +58,33 @@ type typeInfo struct {
 	textUnmarshaler bool // *T implements encoding.TextUnmarshaler
 	needsEncoding   bool // Marshal converts values of T, see needsEncoding
 	equal           int  // index of the Equal(T) bool method of T, -1 if none, for Diff
+
+	fastEqual func(x, y reflect.Value) bool // reflect.DeepEqual for values of T without reflecting on items, for Diff
 }
 
-// tagCache holds the type infos of one tag, it is resolved once per call
+// tagCache holds the type infos of one tag and Codec.Inline, it is resolved once per call
 // so per-value lookups are keyed by type only.
 type tagCache struct {
-	tag   string
-	types sync.Map // reflect.Type -> *typeInfo
+	tag    string
+	inline bool
+	types  sync.Map // reflect.Type -> *typeInfo
 }
 
-var tagCaches sync.Map // tag -> *tagCache
+// tagCaches holds the tag caches without and with Codec.Inline. They are keyed by the tag alone,
+// a string key hashes faster than a struct of the tag and Inline, which Diff of small structs shows.
+var tagCaches [2]sync.Map // tag -> *tagCache
 
-func cacheFor(tag string) *tagCache {
-	if cached, ok := tagCaches.Load(tag); ok {
+func cacheFor(tag string, inline bool) *tagCache {
+	caches := &tagCaches[0]
+	if inline {
+		caches = &tagCaches[1]
+	}
+
+	if cached, ok := caches.Load(tag); ok {
 		return cached.(*tagCache)
 	}
 
-	cached, _ := tagCaches.LoadOrStore(tag, &tagCache{tag: tag})
+	cached, _ := caches.LoadOrStore(tag, &tagCache{tag: tag, inline: inline})
 
 	return cached.(*tagCache)
 }
@@ -100,12 +110,16 @@ func (c *tagCache) newInfo(t reflect.Type) *typeInfo {
 	}
 
 	if t.Kind() == reflect.Struct {
-		info.fields = parseFields(t, c.tag)
+		info.fields = parseFields(t, c.tag, c.inline)
 		info.simple = simpleFields(info.fields)
 		// Decided here, needsEncoding would look this struct up again.
 		info.needsEncoding = info.marshaler || info.ptrMarshaler || len(info.fields) > 0
 	} else {
 		info.needsEncoding = c.needsEncoding(t, nil)
+	}
+
+	if !info.needsEncoding && info.equal < 0 {
+		info.fastEqual = fastEqualFor(t)
 	}
 
 	return info
@@ -178,14 +192,19 @@ func (c *tagCache) needsEncoding(t reflect.Type, visiting map[reflect.Type]struc
 	}
 }
 
-func parseFields(t reflect.Type, tag string) []field {
+func parseFields(t reflect.Type, tag string, inline bool) []field {
 	var fields []field
 
 	for i := range t.NumField() {
 		sf := t.Field(i)
 
 		value, ok := sf.Tag.Lookup(tag)
-		if !ok || !sf.IsExported() || value == "-" {
+		if value == "-" {
+			continue
+		}
+
+		inlined := inline && isInlined(sf, tag)
+		if !inlined && (!ok || !sf.IsExported()) {
 			continue
 		}
 
@@ -208,6 +227,8 @@ func parseFields(t reflect.Type, tag string) []field {
 				f.squash = true
 			case "overwrite":
 				f.overwrite = true
+			case "string":
+				// encoding/json's option, ignored so that a codec on the json tag keeps the field in its schemas.
 			default:
 				if isOptionTypo(item) {
 					panic(fmt.Sprintf("structmap: unknown option %q in %s.%s tag %q", item, t, sf.Name, tag))
@@ -219,6 +240,10 @@ func parseFields(t reflect.Type, tag string) []field {
 
 				f.schemas[item] = struct{}{}
 			}
+		}
+
+		if inlined {
+			f.squash = true
 		}
 
 		switch {
@@ -236,6 +261,67 @@ func parseFields(t reflect.Type, tag string) []field {
 	}
 
 	return fields
+}
+
+// isInlined reports whether Codec.Inline squashes the field: an embedded struct, or pointer to one,
+// whose tag has no name and which has keys to squash.
+func isInlined(sf reflect.StructField, tag string) bool {
+	name, _, _ := strings.Cut(sf.Tag.Get(tag), ",")
+
+	return sf.Anonymous && name == "" && hasKeys(sf.Type, sf.IsExported(), tag, nil)
+}
+
+// hasKeys reports whether the embedded type t gives a parent keys when squashed, as parseFields
+// reads it with Codec.Inline: it is a Marshaler or Unmarshaler, or has a field parseFields keeps.
+// Types embedded through an unexported name are skipped when Unmarshal could not set them
+// (a pointer it would allocate) or call them (a Marshaler or Unmarshaler).
+// visiting guards types that embed themselves, such as type N struct{ *N }.
+func hasKeys(t reflect.Type, exported bool, tag string, visiting map[reflect.Type]struct{}) bool {
+	if t.Kind() == reflect.Pointer {
+		if !exported {
+			return false
+		}
+
+		t = t.Elem()
+	}
+
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+
+	if implementsMarshaler(t) || reflect.PointerTo(t).Implements(unmarshalerType) {
+		return exported
+	}
+
+	if _, ok := visiting[t]; ok {
+		return false
+	}
+
+	if visiting == nil {
+		visiting = make(map[reflect.Type]struct{})
+	}
+
+	visiting[t] = struct{}{}
+
+	for i := range t.NumField() {
+		sf := t.Field(i)
+
+		value, ok := sf.Tag.Lookup(tag)
+		if value == "-" {
+			continue
+		}
+
+		name, _, _ := strings.Cut(value, ",")
+		if sf.Anonymous && name == "" && hasKeys(sf.Type, sf.IsExported(), tag, visiting) {
+			return true
+		}
+
+		if ok && sf.IsExported() {
+			return true
+		}
+	}
+
+	return false
 }
 
 var options = [...]string{"omitempty", "omitzero", "squash", "overwrite"}

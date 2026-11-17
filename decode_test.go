@@ -360,3 +360,33 @@ func TestUnmarshalPanics(t *testing.T) {
 	assert.PanicsWithValue(t, "structmap: Unmarshal expects a pointer to struct, got *int",
 		func() { _ = codec.Unmarshal(nil, new(int), "") })
 }
+
+func TestUnmarshalInline(t *testing.T) {
+	t.Parallel()
+
+	var got inlineDoc
+	require.NoError(t, inlineCodec.Unmarshal(
+		map[string]any{"lat": 50.45, "lon": 30.52, "note": "n", "id": "7", "city": "Kyiv"}, &got, ""))
+	assert.Equal(t, newInlineDoc(), got)
+
+	var partial inlineDoc
+	require.NoError(t, inlineCodec.Unmarshal(map[string]any{"lat": 1.0, "city": "Lviv"}, &partial, ""))
+	assert.Equal(t, inlineDoc{InlinePoint: InlinePoint{Lat: 1}, City: "Lviv"}, partial)
+	assert.Nil(t, partial.InlineMeta, "allocated only when one of its keys is present")
+}
+
+func TestDiffInline(t *testing.T) {
+	t.Parallel()
+
+	a, b := newInlineDoc(), newInlineDoc()
+	b.Lat = 49.84
+	b.InlineMeta = &InlineMeta{}
+
+	got, err := inlineCodec.Diff(a, b, "")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"lat": 49.84, "note": nil}, got)
+
+	patched := newInlineDoc()
+	require.NoError(t, inlineCodec.Unmarshal(got, &patched, ""))
+	assert.Equal(t, b, patched)
+}

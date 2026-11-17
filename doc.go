@@ -15,11 +15,18 @@
 //   - omitzero: skip the field when zero, using its IsZero method when defined;
 //   - squash: merge the nested struct (or Marshaler map) into the parent instead of nesting it;
 //   - overwrite: with squash, the squashed keys replace the parent's;
+//   - string: ignored, it is encoding/json's option, so a Codec on the json tag can read json tags;
 //   - anything else is a schema name.
 //
 // A field without schema names takes part in every schema, otherwise only in the listed ones.
 // An empty schema selects every tagged field. Untagged, unexported and "-" fields are skipped,
 // an empty name falls back to the Go field name.
+//
+// With Codec.Inline, embedded structs whose tag has no name (untagged, or options only such as ",omitempty")
+// are squashed, as encoding/json inlines them, including embedded structs of unexported types.
+// Embedded types with no keys to squash are skipped, and so are pointers to unexported types,
+// which Unmarshal could not allocate. Precedence stays the squash rule: the parent's keys win,
+// where encoding/json drops names that are ambiguous at the same depth.
 //
 // Items starting with "omit" or close to an option name (such as "sqash" or "overwite") panic,
 // so a misspelled option is not silently taken as a schema name.
@@ -56,13 +63,20 @@
 // as it decodes from the parent map.
 //
 // Values are compared by their Equal(T) bool method when defined, so time.Time values of the same
-// instant are equal in any location, and by reflect.DeepEqual otherwise.
+// instant are equal in any location, and by reflect.DeepEqual otherwise. Slices of booleans, numbers
+// and strings, and string-keyed maps of them, are compared as reflect.DeepEqual does without reflecting
+// on every item.
+//
+// With Codec.Shallow, nested structs are compared as a whole and a changed one is returned with all of its
+// keys, for stores that replace top-level values instead of merging into them: replacing a's top-level
+// values with the patch's gives what b marshals to. Unmarshal merges into nested structs, so it does not
+// apply such a patch exactly: a nested key b drops by omitempty or omitzero is not reset.
 //
 // # Custom types
 //
 // Types implementing Marshaler or Unmarshaler encode and decode themselves, including the value
 // passed to Marshal or Unmarshal. To extend the default behaviour, convert a defined type without
-// methods (type plain T) with Scope.Codec, so the caller's tag is kept. Converting T itself recurses forever.
+// methods (type plain T) with Scope.Codec, so the caller's tag and Inline are kept. Converting T itself recurses forever.
 //
 // # Errors
 //

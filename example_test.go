@@ -95,6 +95,54 @@ func ExampleDiff() {
 	// {42  [a b] {Lviv 01001}}
 }
 
+func ExampleCodec_shallow() {
+	type Address struct {
+		City string `structmap:"city"`
+		Zip  string `structmap:"zip"`
+	}
+
+	type User struct {
+		ID      string   `structmap:"id"`
+		Name    string   `structmap:"name,omitempty"`
+		Tags    []string `structmap:"tags"`
+		Address Address  `structmap:"address"`
+	}
+
+	before := User{ID: "42", Name: "Ann", Tags: []string{"a"}, Address: Address{City: "Kyiv", Zip: "01001"}}
+	after := User{ID: "42", Tags: []string{"a", "b"}, Address: Address{City: "Lviv", Zip: "01001"}}
+
+	shallow := structmap.Codec{Tag: structmap.DefaultTag, Shallow: true}
+
+	patch, _ := shallow.Diff(before, after, "")
+	fmt.Println(patch)
+	// Output:
+	// map[address:map[city:Lviv zip:01001] name:<nil> tags:[a b]]
+}
+
+func ExampleCodec_inline() {
+	type Point struct {
+		Lat float64 `json:"lat"`
+		Lon float64 `json:"lon"`
+	}
+
+	type Place struct {
+		Point
+
+		City string `json:"city"`
+	}
+
+	place := Place{Point: Point{Lat: 50.45, Lon: 30.52}, City: "Kyiv"}
+
+	m, _ := structmap.Codec{Tag: "json", Inline: true}.Marshal(place, "")
+	fmt.Println(m)
+
+	m, _ = structmap.Codec{Tag: "json"}.Marshal(place, "")
+	fmt.Println(m)
+	// Output:
+	// map[city:Kyiv lat:50.45 lon:30.52]
+	// map[city:Kyiv]
+}
+
 // Money is stored as a decimal string.
 type Money int64
 
